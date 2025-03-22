@@ -1,0 +1,227 @@
+/* src/App.css */
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;700&display=swap');
+
+body {
+  background-color: #1A1A1A;
+  color: #FFFFFF;
+  font-family: 'Poppins', sans-serif;
+  margin: 0;
+}
+
+.App {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 20px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+header {
+  background-color: #000000;
+  padding: 20px;
+  border-radius: 8px;
+  margin-bottom: 30px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+h1 {
+  color: #34C759;
+  margin: 0;
+  font-weight: 700;
+}
+
+main {
+  background-color: #2D2D2D;
+  padding: 30px;
+  border-radius: 8px;
+  width: 100%;
+  box-sizing: border-box;
+  max-width: 100%;
+}
+
+/* Contêiner do formulário */
+.portfolio-setup {
+  width: 100%;
+  max-width: 100%;
+}
+
+/* Estilo base para inputs e selects */
+input, select {
+  display: block;
+  padding: 12px;
+  background-color: #000000;
+  color: #FFFFFF;
+  border: 1px solid #34C759;
+  border-radius: 6px;
+  font-family: 'Poppins', sans-serif;
+  box-sizing: border-box;
+  width: 100%;
+}
+
+/* Seção do formulário */
+.form-section {
+  margin-bottom: 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.form-section h4 {
+  margin: 0 0 10px 0;
+  font-size: 1.2em;
+  color: #34C759;
+  font-weight: 700;
+}
+
+/* Grupo de campos */
+.form-group {
+  margin-bottom: 10px;
+  width: 100%;
+  max-width: 500px;
+}
+
+.form-group label {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 0.9em;
+  color: #FFFFFF;
+}
+
+.form-group input,
+.form-group select {
+  width: 100%;
+  max-width: 500px;
+}
+
+/* Ajuste para itens de criptomoedas */
+.portfolio-setup .crypto-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin: 10px 0;
+  padding: 12px;
+  background-color: #000000;
+  border-radius: 6px;
+  width: 100%;
+  max-width: 500px;
+}
+
+.crypto-item span {
+  width: 50%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.crypto-item select {
+  width: 50%;
+  max-width: 100px;
+}
+
+/* Ajuste específico para campos de login */
+.login-input {
+  width: 100%;
+  max-width: 500px;
+  margin: 10px auto;
+}
+
+/* Botões */
+button {
+  padding: 12px 24px;
+  background-color: #34C759;
+  color: #000000;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 700;
+}
+
+button:hover {
+  background-color: #2DAF4A;
+}
+
+.add-btn, .logout-btn, .delete-btn {
+  background-color: #FF4D4D;
+}
+
+.add-btn:hover, .logout-btn:hover, .delete-btn:hover {
+  background-color: #E63939;
+}
+
+.cancel-btn {
+  background-color: #6B7280;
+  margin-left: 15px;
+}
+
+.cancel-btn:hover {
+  background-color: #4B5563;
+}
+
+.error {
+  color: #FF4D4D;
+  margin: 10px 0;
+  text-align: center;
+}
+
+.portfolio-manager h2 {
+  font-weight: 700;
+  margin-bottom: 20px;
+}
+
+.form-actions {
+  display: flex;
+  gap: 15px;
+  margin-top: 20px;
+  justify-content: center;
+}
+
+.portfolio-list .portfolio-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin: 10px 0;
+  padding: 12px;
+  background-color: #000000;
+  border-radius: 6px;
+}
+
+.login {
+  text-align: center;
+}
+
+.login h2 {
+  font-weight: 700;
+  margin-bottom: 20px;
+}
+
+.view-btn {
+  background-color: #34C759;
+  margin-right: 10px;
+}
+
+.view-btn:hover {
+  background-color: #2DAF4A;
+}
+
+.portfolio-details {
+  margin-top: 10px;
+  padding: 15px;
+  background-color: #1A1A1A;
+  border-radius: 6px;
+}
+
+.portfolio-details h4 {
+  margin: 0 0 10px 0;
+  color: #34C759;
+}
+
+.portfolio-details ul {
+  list-style: none;
+  padding: 0;
+}
+
+.portfolio-details li {
+  margin: 5px 0;
+}

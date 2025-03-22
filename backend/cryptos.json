@@ -1,0 +1,21 @@
+[
+  {"symbol": "XRPUSDT", "name": "XRP"},
+  {"symbol": "BNBUSDT", "name": "BNB"},
+  {"symbol": "ETHUSDT", "name": "Ethereum"},
+  {"symbol": "AVAXUSDT", "name": "Avalanche"},
+  {"symbol": "BTCUSDT", "name": "Bitcoin"},
+  {"symbol": "SOLUSDT", "name": "Solana"},
+  {"symbol": "CAKEUSDT", "name": "PancakeSwap"},
+  {"symbol": "ADAUSDT", "name": "Cardano"},
+  {"symbol": "EGLDUSDT", "name": "MultiversX"},
+  {"symbol": "FILUSDT", "name": "Filecoin"},
+  {"symbol": "ALICEUSDT", "name": "MyNeighborAlice"},
+  {"symbol": "SANDUSDT", "name": "The Sandbox"},
+  {"symbol": "GALAUSDT", "name": "Gala"},
+  {"symbol": "DGBUSDT", "name": "DigiByte"},
+  {"symbol": "LUNAUSDT", "name": "Terra"},
+  {"symbol": "RVNUSDT", "name": "Ravencoin"},
+  {"symbol": "FLOWUSDT", "name": "Flow"},
+  {"symbol": "ONEUSDT", "name": "Harmony"}
+]
+

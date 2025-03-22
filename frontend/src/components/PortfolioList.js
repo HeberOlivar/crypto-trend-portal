@@ -1,0 +1,88 @@
+import React, { useState, useEffect } from 'react';
+import axios from 'axios';
+import PortfolioSetup from './PortfolioSetup';
+import { FaPlus, FaTrash, FaEye } from 'react-icons/fa';
+
+function PortfolioList({ userId }) {
+  const [portfolios, setPortfolios] = useState([]);
+  const [showSetup, setShowSetup] = useState(false);
+  const [selectedPortfolio, setSelectedPortfolio] = useState(null);
+
+  useEffect(() => {
+    fetchPortfolios();
+  }, [userId]);
+
+  const fetchPortfolios = async () => {
+    if (!userId) return;
+    try {
+      const response = await axios.get(`http://15.229.222.90:8000/portfolios/${userId}`);
+      setPortfolios(response.data);
+    } catch (err) {
+      console.error('Erro ao buscar carteiras:', err);
+    }
+  };
+
+  const handleAddPortfolio = (portfolioId) => {
+    setShowSetup(false);
+    fetchPortfolios();
+  };
+
+  const handleDeletePortfolio = async (portfolioId) => {
+    try {
+      await axios.delete(`http://15.229.222.90:8000/portfolios/${userId}/${portfolioId}`);
+      fetchPortfolios();
+    } catch (err) {
+      console.error('Erro ao excluir carteira:', err);
+    }
+  };
+
+  const handleViewPortfolio = (portfolio) => {
+    setSelectedPortfolio(selectedPortfolio?.id === portfolio.id ? null : portfolio);
+  };
+
+  // Função para formatar o valor com 2 casas decimais
+  const formatAmount = (amount) => {
+    return Number(amount).toFixed(2);
+  };
+
+  return (
+    <div className="portfolio-manager">
+      <h2>Gerenciar Carteiras</h2>
+      <button className="add-btn" onClick={() => setShowSetup(true)}>
+        <FaPlus /> Adicionar Carteira
+      </button>
+      {showSetup && (
+        <PortfolioSetup userId={userId} onAddPortfolio={handleAddPortfolio} onCancel={() => setShowSetup(false)} />
+      )}
+      <div className="portfolio-list">
+        {portfolios.map(portfolio => (
+          <div key={portfolio.id} className="portfolio-item">
+            <span>{portfolio.name} - {formatAmount(portfolio.total_amount)} USDT</span>
+            <div>
+              <button className="view-btn" onClick={() => handleViewPortfolio(portfolio)}>
+                <FaEye />
+              </button>
+              <button className="delete-btn" onClick={() => handleDeletePortfolio(portfolio.id)}>
+                <FaTrash />
+              </button>
+            </div>
+            {selectedPortfolio?.id === portfolio.id && (
+              <div className="portfolio-details">
+                <h4>Ativos da Carteira</h4>
+                <ul>
+                  {portfolio.assets.map(asset => (
+                    <li key={asset.symbol}>
+                      {asset.symbol} - {formatAmount(asset.amount_in_usd)} USDT (Alavancagem: {asset.leverage}x)
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+export default PortfolioList;
