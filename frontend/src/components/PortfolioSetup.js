@@ -138,7 +138,7 @@ function PortfolioSetup({ userId, portfolio, onAddPortfolio, onCancel }) {
           <div className="form-group">
             <label>API Secret</label>
             <input
-              type="text"
+              type="password"
               value={apiSecret}
               onChange={(e) => setApiSecret(e.target.value)}
               placeholder="Digite sua API Secret"

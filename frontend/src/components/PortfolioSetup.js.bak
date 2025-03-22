@@ -4,16 +4,17 @@ import axios from 'axios';
 function PortfolioSetup({ userId, portfolio, onAddPortfolio, onCancel }) {
   const [name, setName] = useState(portfolio ? portfolio.name : '');
   const [totalAmount, setTotalAmount] = useState(portfolio ? portfolio.total_amount : '');
-  const [exchange, setExchange] = useState(portfolio ? portfolio.exchange : 'Binance');
+  const [exchange] = useState('Bybit'); // Apenas Bybit
+  const [apiKey, setApiKey] = useState(portfolio ? portfolio.api_key : '');
+  const [apiSecret, setApiSecret] = useState(portfolio ? portfolio.api_secret : '');
   const [cryptos, setCryptos] = useState([]);
   const [assets, setAssets] = useState(
     portfolio
       ? portfolio.assets.map(asset => ({
           symbol: asset.symbol,
-          amount: asset.amount_in_usd,
           leverage: asset.leverage,
         }))
-      : [{ symbol: 'GALAUSDT', amount: '', leverage: 1 }]
+      : [{ symbol: 'GALAUSDT', leverage: 1 }]
   );
   const [error, setError] = useState('');
 
@@ -30,7 +31,7 @@ function PortfolioSetup({ userId, portfolio, onAddPortfolio, onCancel }) {
   }, []);
 
   const handleAddCrypto = () => {
-    setAssets([...assets, { symbol: 'GALAUSDT', amount: '', leverage: 1 }]);
+    setAssets([...assets, { symbol: 'GALAUSDT', leverage: 1 }]);
   };
 
   const handleRemoveCrypto = (index) => {
@@ -45,18 +46,24 @@ function PortfolioSetup({ userId, portfolio, onAddPortfolio, onCancel }) {
     setAssets(newAssets);
   };
 
+  const calculateAmountPerCrypto = () => {
+    if (!totalAmount || assets.length === 0) return 0;
+    const totalLeverage = assets.reduce((sum, asset) => sum + asset.leverage, 0);
+    return Number(totalAmount) / totalLeverage;
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
 
-    if (!name || !totalAmount || assets.some(asset => !asset.amount)) {
+    if (!name || !totalAmount || !apiKey || !apiSecret) {
       setError('Por favor, preencha todos os campos.');
       return;
     }
 
-    const totalCryptoAmount = assets.reduce((sum, asset) => sum + Number(asset.amount), 0);
-    if (totalCryptoAmount > Number(totalAmount)) {
-      setError('A soma dos valores das criptomoedas não pode exceder o valor total da carteira.');
+    const amountPerCrypto = calculateAmountPerCrypto();
+    if (amountPerCrypto <= 0) {
+      setError('O valor total deve ser maior que zero e as criptomoedas devem ter alavancagem válida.');
       return;
     }
 
@@ -66,9 +73,11 @@ function PortfolioSetup({ userId, portfolio, onAddPortfolio, onCancel }) {
       name,
       total_amount: Number(totalAmount),
       exchange,
+      api_key: apiKey,
+      api_secret: apiSecret,
       assets: assets.map(asset => ({
         symbol: asset.symbol,
-        amount_in_usd: Number(asset.amount),
+        amount_in_usd: calculateAmountPerCrypto() * asset.leverage,
         leverage: Number(asset.leverage),
       })),
     };
@@ -115,11 +124,25 @@ function PortfolioSetup({ userId, portfolio, onAddPortfolio, onCancel }) {
           </div>
           <div className="form-group">
             <label>Exchange</label>
-            <select value={exchange} onChange={(e) => setExchange(e.target.value)}>
-              <option value="Binance">Binance</option>
-              <option value="Bybit">Bybit</option>
-              <option value="Kraken">Kraken</option>
-            </select>
+            <input type="text" value={exchange} readOnly />
+          </div>
+          <div className="form-group">
+            <label>API Key</label>
+            <input
+              type="text"
+              value={apiKey}
+              onChange={(e) => setApiKey(e.target.value)}
+              placeholder="Digite sua API Key"
+            />
+          </div>
+          <div className="form-group">
+            <label>API Secret</label>
+            <input
+              type="text"
+              value={apiSecret}
+              onChange={(e) => setApiSecret(e.target.value)}
+              placeholder="Digite sua API Secret"
+            />
           </div>
         </div>
 
@@ -141,26 +164,25 @@ function PortfolioSetup({ userId, portfolio, onAddPortfolio, onCancel }) {
                 </select>
               </div>
               <div>
-                <label>Valor (USDT)</label>
-                <input
-                  type="number"
-                  value={asset.amount}
-                  onChange={(e) => handleCryptoChange(index, 'amount', e.target.value)}
-                  placeholder="Ex.: 500"
-                />
-              </div>
-              <div>
                 <label>Alavancagem</label>
                 <select
                   value={asset.leverage}
                   onChange={(e) => handleCryptoChange(index, 'leverage', e.target.value)}
                 >
-                  {[1, 2, 3, 5, 10].map(leverage => (
+                  {[1, 2].map(leverage => (
                     <option key={leverage} value={leverage}>
                       {leverage}x
                     </option>
                   ))}
                 </select>
+              </div>
+              <div>
+                <label>Valor Calculado (USDT)</label>
+                <input
+                  type="text"
+                  value={(calculateAmountPerCrypto() * asset.leverage).toFixed(2)}
+                  readOnly
+                />
               </div>
               {assets.length > 1 && (
                 <button
