@@ -3,8 +3,18 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Dict
 from datetime import datetime
+import json
+import requests
+import hmac
+import hashlib
+import time
+import logging
 
 app = FastAPI()
+
+# Configurar logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # Adicionar middleware CORS
 app.add_middleware(
@@ -27,6 +37,8 @@ class Portfolio(BaseModel):
     name: str
     total_amount: float
     exchange: str
+    api_key: str
+    api_secret: str
     assets: List[Asset]
 
 # Modelo para o login
@@ -34,27 +46,138 @@ class LoginRequest(BaseModel):
     username: str
     password: str
 
-# Simulação de um banco de dados
-portfolios_db = [
-    {
-        "id": 1,
-        "user_id": 1,
-        "name": "Carteira 1",
-        "total_amount": 1000.0,
-        "exchange": "Bybit",
-        "assets": [
-            {"symbol": "GALAUSDT", "amount_in_usd": 333.33, "leverage": 1},
-            {"symbol": "FLOWUSDT", "amount_in_usd": 333.33, "leverage": 1},
-            {"symbol": "LUNAUSDT", "amount_in_usd": 333.33, "leverage": 1}
-        ],
-        "created_at": "2025-03-21T00:00:00"
-    }
-]
+# Modelo para o signal
+class SignalRequest(BaseModel):
+    symbol: str
+    trend: str
+    amount_in_usd: float
+    leverage: int
+
+# Função para carregar portfolios de um arquivo JSON
+def load_portfolios():
+    try:
+        with open("portfolios.json", "r") as file:
+            return json.load(file)
+    except FileNotFoundError:
+        # Se o arquivo não existir, retorna uma lista vazia
+        return []
+    except Exception as e:
+        logger.error(f"Erro ao carregar portfolios.json: {str(e)}")
+        return []
+
+# Função para salvar portfolios em um arquivo JSON
+def save_portfolios(portfolios):
+    try:
+        with open("portfolios.json", "w") as file:
+            json.dump(portfolios, file, indent=4)
+    except Exception as e:
+        logger.error(f"Erro ao salvar portfolios.json: {str(e)}")
+
+# Carrega os portfolios ao iniciar o servidor
+portfolios_db = load_portfolios()
+
+# Função para obter o horário do servidor da Bybit
+def get_bybit_server_time() -> int:
+    try:
+        response = requests.get("https://api-testnet.bybit.com/v5/market/time")
+        response.raise_for_status()
+        data = response.json()
+        if data["retCode"] != 0:
+            raise Exception(data["retMsg"])
+        # O horário do servidor está em "timeSecond"
+        server_time = int(data["result"]["timeSecond"]) * 1000  # Converte de segundos para milissegundos
+        logger.info(f"Horário do servidor da Bybit: {server_time}")
+        return server_time
+    except Exception as e:
+        logger.error(f"Erro ao obter horário do servidor da Bybit: {str(e)}")
+        # Fallback para o horário local
+        local_time = int(time.time() * 1000)
+        logger.warning(f"Usando horário local como fallback: {local_time}")
+        return local_time
+
+# Função para gerar a assinatura HMAC-SHA256 para a Bybit
+def generate_bybit_signature(api_key: str, api_secret: str, timestamp: str, recv_window: str, body: str = None) -> str:
+    # Para requisições GET, o corpo não é incluído na assinatura
+    if body is None:
+        param_str = f"{timestamp}{api_key}{recv_window}"
+    else:
+        # Para requisições POST, o corpo é incluído
+        param_str = f"{timestamp}{api_key}{recv_window}{body}"
+    logger.info(f"String de assinatura gerada: {param_str}")
+    
+    # Gera a assinatura HMAC-SHA256
+    signature = hmac.new(
+        api_secret.encode('utf-8'),
+        param_str.encode('utf-8'),
+        hashlib.sha256
+    ).hexdigest()
+    logger.info(f"Assinatura gerada (X-BAPI-SIGN): {signature}")
+    
+    return signature
+
+# Função para validar as credenciais na Bybit
+def validate_bybit_credentials(api_key: str, api_secret: str) -> bool:
+    max_attempts = 3
+    for attempt in range(max_attempts):
+        timestamp = str(get_bybit_server_time())
+        recv_window = "10000"  # Janela de recebimento (10 segundos)
+        
+        # Para requisições GET, não incluímos o corpo na assinatura
+        signature = generate_bybit_signature(api_key, api_secret, timestamp, recv_window, body=None)
+        
+        headers = {
+            "X-BAPI-API-KEY": api_key,
+            "X-BAPI-TIMESTAMP": timestamp,
+            "X-BAPI-RECV-WINDOW": recv_window,
+            "X-BAPI-SIGN": signature,
+            "Content-Type": "application/json"
+        }
+        logger.info(f"Cabeçalhos da requisição (validação): {headers}")
+        
+        try:
+            response = requests.get(
+                "https://api-testnet.bybit.com/v5/user/query-api",
+                headers=headers
+            )
+            data = response.json()
+            logger.info(f"Resposta da validação de credenciais (tentativa {attempt + 1}): {data}")
+            if data["retCode"] == 0:
+                return True
+            elif data["retCode"] == 10002:
+                # Timestamp dessincronizado, tenta novamente
+                logger.warning(f"Timestamp dessincronizado (tentativa {attempt + 1}): req_timestamp[{timestamp}], server_timestamp[{data['time']}]")
+                if attempt == max_attempts - 1:
+                    logger.error("Falha ao sincronizar timestamp após várias tentativas")
+                    return False
+                time.sleep(1)  # Pequena pausa antes de tentar novamente
+                continue
+            else:
+                logger.error(f"Credenciais inválidas: {data['retMsg']}")
+                return False
+        except Exception as e:
+            logger.error(f"Erro ao validar credenciais: {str(e)}")
+            return False
+
+# Função para obter o preço atual do ativo na Bybit
+def get_current_price(symbol: str) -> float:
+    try:
+        response = requests.get(
+            "https://api-testnet.bybit.com/v5/market/tickers",
+            params={"category": "linear", "symbol": symbol}
+        )
+        response.raise_for_status()
+        data = response.json()
+        if data["retCode"] != 0:
+            raise Exception(data["retMsg"])
+        # O preço está em "lastPrice"
+        price = float(data["result"]["list"][0]["lastPrice"])
+        return price
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erro ao obter preço do ativo {symbol}: {str(e)}")
 
 # Endpoint para login
 @app.post("/login")
 async def login(request: LoginRequest):
-    # Simulação de autenticação (substitua por lógica real com banco de dados)
     if request.username == "user" and request.password == "pass":
         return {"user_id": 1}
     raise HTTPException(status_code=401, detail="Credenciais inválidas")
@@ -62,13 +185,14 @@ async def login(request: LoginRequest):
 # Endpoint para buscar as criptomoedas disponíveis
 @app.get("/cryptos")
 async def get_cryptos():
-    return [
-        {"symbol": "GALAUSDT", "name": "Gala"},
-        {"symbol": "FLOWUSDT", "name": "Flow"},
-        {"symbol": "LUNAUSDT", "name": "Terra"},
-        {"symbol": "RVNUSDT", "name": "Ravencoin"},
-        {"symbol": "EGLDUSDT", "name": "Elrond"}
-    ]
+    try:
+        with open("cryptos.json", "r") as file:
+            cryptos = json.load(file)
+        return cryptos
+    except FileNotFoundError:
+        raise HTTPException(status_code=500, detail="Arquivo cryptos.json não encontrado")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erro ao ler cryptos.json: {str(e)}")
 
 # Endpoint para buscar as carteiras de um usuário
 @app.get("/portfolios/{user_id}")
@@ -79,10 +203,17 @@ async def get_portfolios(user_id: int):
 # Endpoint para criar uma nova carteira
 @app.post("/portfolios/{user_id}")
 async def create_portfolio(user_id: int, portfolio: Portfolio):
+    global portfolios_db
     portfolio_dict = portfolio.dict()
     portfolio_dict["user_id"] = user_id
     portfolio_dict["created_at"] = datetime.now().isoformat()
+    
+    # Valida as credenciais antes de salvar
+    if not validate_bybit_credentials(portfolio_dict["api_key"], portfolio_dict["api_secret"]):
+        raise HTTPException(status_code=400, detail="Credenciais da Bybit inválidas")
+    
     portfolios_db.append(portfolio_dict)
+    save_portfolios(portfolios_db)  # Salva no arquivo JSON
     return {"portfolio_id": portfolio_dict["id"]}
 
 # Endpoint para excluir uma carteira
@@ -93,22 +224,105 @@ async def delete_portfolio(portfolio_id: int):
     if not portfolio:
         raise HTTPException(status_code=404, detail="Carteira não encontrada")
     portfolios_db = [p for p in portfolios_db if p["id"] != portfolio_id]
+    save_portfolios(portfolios_db)  # Salva no arquivo JSON
     return {"message": "Carteira excluída com sucesso"}
 
 # Endpoint para atualizar uma carteira existente
 @app.put("/portfolios/{portfolio_id}")
 async def update_portfolio(portfolio_id: int, portfolio: Portfolio):
     global portfolios_db
-    # Verifica se a carteira existe
     existing_portfolio = next((p for p in portfolios_db if p["id"] == portfolio_id), None)
     if not existing_portfolio:
         raise HTTPException(status_code=404, detail="Carteira não encontrada")
     
-    # Atualiza os dados da carteira
     portfolio_dict = portfolio.dict()
     portfolio_dict["user_id"] = existing_portfolio["user_id"]
     portfolio_dict["created_at"] = existing_portfolio["created_at"]
-    # Remove a carteira antiga e adiciona a nova
+    
+    # Valida as credenciais antes de salvar
+    if not validate_bybit_credentials(portfolio_dict["api_key"], portfolio_dict["api_secret"]):
+        raise HTTPException(status_code=400, detail="Credenciais da Bybit inválidas")
+    
     portfolios_db = [p for p in portfolios_db if p["id"] != portfolio_id]
     portfolios_db.append(portfolio_dict)
+    save_portfolios(portfolios_db)  # Salva no arquivo JSON
     return {"message": "Carteira atualizada com sucesso"}
+
+# Endpoint para enviar um sinal para a Bybit
+@app.post("/signal/{portfolio_id}")
+async def send_signal(portfolio_id: int, signal: SignalRequest):
+    # Busca as credenciais da carteira no portfolios_db
+    portfolio = next((p for p in portfolios_db if p["id"] == portfolio_id), None)
+    if not portfolio:
+        raise HTTPException(status_code=404, detail="Carteira não encontrada")
+
+    api_key = portfolio["api_key"]
+    api_secret = portfolio["api_secret"]
+    logger.info(f"Usando credenciais - api_key: {api_key}, api_secret: {api_secret}")
+
+    # Valida as credenciais antes de prosseguir
+    if not validate_bybit_credentials(api_key, api_secret):
+        raise HTTPException(status_code=400, detail="Credenciais da Bybit inválidas")
+
+    # Obtém o preço atual do ativo
+    price = get_current_price(signal.symbol)
+    if price <= 0:
+        raise HTTPException(status_code=400, detail="Preço do ativo inválido")
+
+    # Calcula a quantidade (qty) com base no amount_in_usd e no preço atual
+    qty = signal.amount_in_usd / price
+
+    # Obtém o timestamp do servidor da Bybit
+    timestamp = str(get_bybit_server_time())
+
+    # Parâmetros para a chamada à Bybit
+    recv_window = "10000"  # Janela de recebimento (10 segundos)
+    
+    # Dados da ordem para a Bybit
+    order_params = {
+        "category": "linear",  # Futuros lineares (USDT)
+        "symbol": signal.symbol,
+        "side": "Buy" if signal.trend == "up" else "Sell",
+        "orderType": "Market",
+        "qty": str(round(qty, 4)),  # Quantidade arredondada para 4 casas decimais
+        "timeInForce": "GTC"
+    }
+
+    # Serializa os parâmetros como JSON (sem espaços extras)
+    body = json.dumps(order_params, separators=(',', ':'))
+    logger.info(f"Corpo da requisição (enviado): {body}")
+
+    # Gera a assinatura usando o corpo JSON
+    signature = generate_bybit_signature(api_key, api_secret, timestamp, recv_window, body)
+
+    # Cabeçalhos para a chamada à Bybit
+    headers = {
+        "X-BAPI-API-KEY": api_key,
+        "X-BAPI-TIMESTAMP": timestamp,
+        "X-BAPI-RECV-WINDOW": recv_window,
+        "X-BAPI-SIGN": signature,
+        "Content-Type": "application/json"
+    }
+    logger.info(f"Cabeçalhos da requisição (criação de ordem): {headers}")
+
+    # Faz a chamada à API da Bybit (usando Testnet)
+    try:
+        response = requests.post(
+            "https://api-testnet.bybit.com/v5/order/create",
+            headers=headers,
+            data=body  # Envia o corpo como string, em vez de usar json=
+        )
+        response_data = response.json()
+        logger.info(f"Resposta da Bybit: {response_data}")
+        
+        # Verifica se há erro lógico na resposta da Bybit
+        if response_data["retCode"] != 0:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Erro na API da Bybit: {response_data['retMsg']} (retCode: {response_data['retCode']})"
+            )
+        
+        return {"message": "Ordem enviada com sucesso", "bybit_response": response_data}
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Erro ao enviar ordem para a Bybit: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Erro ao enviar ordem para a Bybit: {str(e)}")
