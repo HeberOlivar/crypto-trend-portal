@@ -4,7 +4,7 @@ import PortfolioSetup from './PortfolioSetup';
 
 function PortfolioManager({ userId }) {
   const [portfolios, setPortfolios] = useState([]);
-  const [selectedPortfolio, setSelectedPortfolio] = useState(null);
+  const [selectedPortfolio, setSelectedPortfolio] = useState(null); // Para edição
   const [isAdding, setIsAdding] = useState(false);
 
   useEffect(() => {
@@ -25,24 +25,31 @@ function PortfolioManager({ userId }) {
     fetchPortfolios();
   };
 
-  const handleCancelAdd = () => {
+  const handleEditPortfolio = (portfolio) => {
+    setSelectedPortfolio(portfolio);
     setIsAdding(false);
   };
 
-  const handleViewPortfolio = (portfolio) => {
-    setSelectedPortfolio(portfolio);
+  const handleCancelAdd = () => {
+    setIsAdding(false);
+    setSelectedPortfolio(null);
   };
 
   const handleDeletePortfolio = async (portfolioId) => {
     if (window.confirm('Tem certeza que deseja excluir esta carteira?')) {
       try {
         await axios.delete(`http://15.229.222.90:8000/portfolios/${portfolioId}`);
-        fetchPortfolios(); // Atualiza a lista de carteiras após a exclusão
+        fetchPortfolios();
       } catch (err) {
         console.error('Erro ao excluir carteira:', err);
         alert('Erro ao excluir carteira. Tente novamente.');
       }
     }
+  };
+
+  const handleUpdatePortfolio = () => {
+    setSelectedPortfolio(null);
+    fetchPortfolios();
   };
 
   return (
@@ -58,8 +65,8 @@ function PortfolioManager({ userId }) {
               <div key={portfolio.id} className="portfolio-item">
                 <span>{portfolio.name}</span>
                 <div>
-                  <button className="view-btn" onClick={() => handleViewPortfolio(portfolio)}>
-                    Visualizar
+                  <button className="view-btn" onClick={() => handleEditPortfolio(portfolio)}>
+                    Editar
                   </button>
                   <button
                     className="delete-btn"
@@ -81,24 +88,12 @@ function PortfolioManager({ userId }) {
         />
       )}
       {selectedPortfolio && (
-        <div className="portfolio-details">
-          <button className="cancel-btn" onClick={() => setSelectedPortfolio(null)}>
-            Voltar
-          </button>
-          <h4>{selectedPortfolio.name}</h4>
-          <ul>
-            <li>Valor Total: {selectedPortfolio.total_amount.toFixed(2)} USDT</li>
-            <li>Exchange: {selectedPortfolio.exchange}</li>
-            <li>Criptomoedas:</li>
-            <ul>
-              {selectedPortfolio.assets.map(asset => (
-                <li key={asset.symbol}>
-                  {asset.symbol}: {asset.amount_in_usd.toFixed(2)} USDT (Alavancagem: {asset.leverage}x)
-                </li>
-              ))}
-            </ul>
-          </ul>
-        </div>
+        <PortfolioSetup
+          userId={userId}
+          portfolio={selectedPortfolio}
+          onAddPortfolio={handleUpdatePortfolio}
+          onCancel={handleCancelAdd}
+        />
       )}
     </div>
   );

@@ -1,195 +1,120 @@
-# ~/backend/app.py
-from fastapi import FastAPI, Depends, HTTPException
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy.orm import Session
 from pydantic import BaseModel
-from typing import List
-from models.database import SessionLocal, engine, Base
-from models.user import User, Portfolio, PortfolioAsset, Order, PortfolioPerformance
-from services.bybit_service import BybitService
-from apscheduler.schedulers.background import BackgroundScheduler
-import logging
+from typing import List, Dict
 from datetime import datetime
 import json
 
 app = FastAPI()
-Base.metadata.create_all(bind=engine)
-logging.basicConfig(level=logging.INFO)
 
+# Adicionar middleware CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=["*"],  # Permite todas as origens (ajuste conforme necessário)
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["*"],  # Permite todos os métodos (GET, POST, DELETE, PUT, etc.)
+    allow_headers=["*"],  # Permite todos os cabeçalhos
 )
 
-class UserLogin(BaseModel):
-    username: str
-    password: str
-
-class PortfolioAssetCreate(BaseModel):
+# Modelo para os ativos da carteira
+class Asset(BaseModel):
     symbol: str
     amount_in_usd: float
     leverage: int
 
-class PortfolioCreate(BaseModel):
+class Portfolio(BaseModel):
+    id: int
+    user_id: int
     name: str
     total_amount: float
     exchange: str
     api_key: str
     api_secret: str
-    assets: List[PortfolioAssetCreate]
+    assets: List[Asset]
 
-class TrendSignal(BaseModel):
-    symbol: str
-    trend: str
-    amount_in_usd: float
-    leverage: int
+# Modelo para o login
+class LoginRequest(BaseModel):
+    username: str
+    password: str
 
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
+# Simulação de um banco de dados
+portfolios_db = [
+    {
+        "id": 1,
+        "user_id": 1,
+        "name": "Carteira 1",
+        "total_amount": 1000.0,
+        "exchange": "Bybit",
+        "api_key": "chave-exemplo",
+        "api_secret": "segredo-exemplo",
+        "assets": [
+            {"symbol": "GALAUSDT", "amount_in_usd": 333.33, "leverage": 1},
+            {"symbol": "FLOWUSDT", "amount_in_usd": 333.33, "leverage": 1},
+            {"symbol": "LUNAUSDT", "amount_in_usd": 333.33, "leverage": 1}
+        ],
+        "created_at": "2025-03-21T00:00:00"
+    }
+]
 
+# Endpoint para login
 @app.post("/login")
-def login(user: UserLogin, db: Session = Depends(get_db)):
-    db_user = db.query(User).filter(User.username == user.username).first()
-    if not db_user or db_user.password != user.password:
-        raise HTTPException(status_code=401, detail="Credenciais inválidas")
-    return {"message": "Login bem-sucedido", "user_id": db_user.id}
+async def login(request: LoginRequest):
+    # Simulação de autenticação (substitua por lógica real com banco de dados)
+    if request.username == "user" and request.password == "pass":
+        return {"user_id": 1}
+    raise HTTPException(status_code=401, detail="Credenciais inválidas")
 
-@app.get("/portfolios/{user_id}", response_model=List[dict])
-def get_portfolios(user_id: int, db: Session = Depends(get_db)):
-    db_user = db.query(User).filter(User.id == user_id).first()
-    if not db_user:
-        raise HTTPException(status_code=404, detail="Usuário não encontrado")
-    return [
-        {
-            "id": p.id,
-            "name": p.name,
-            "total_amount": p.total_amount,
-            "exchange": p.exchange,
-            "api_key": p.api_key,
-            "api_secret": p.api_secret,
-            "assets": [{"symbol": a.symbol, "amount_in_usd": a.amount_in_usd, "leverage": a.leverage} for a in p.assets]
-        } for p in db_user.portfolios
-    ]
+# Endpoint para buscar as criptomoedas disponíveis
+@app.get("/cryptos")
+async def get_cryptos():
+    try:
+        with open("cryptos.json", "r") as file:
+            cryptos = json.load(file)
+        return cryptos
+    except FileNotFoundError:
+        raise HTTPException(status_code=500, detail="Arquivo cryptos.json não encontrado")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erro ao ler cryptos.json: {str(e)}")
 
-@app.post("/portfolios/{user_id}", response_model=dict)
-def create_portfolio(user_id: int, portfolio: PortfolioCreate, db: Session = Depends(get_db)):
-    db_user = db.query(User).filter(User.id == user_id).first()
-    if not db_user:
-        raise HTTPException(status_code=404, detail="Usuário não encontrado")
-    if portfolio.exchange != "Bybit":
-        raise HTTPException(status_code=400, detail="Apenas Bybit é suportada no momento")
-    for asset in portfolio.assets:
-        if asset.leverage not in [1, 2]:
-            raise HTTPException(status_code=400, detail="Alavancagem deve ser 1 ou 2")
-    
-    db_portfolio = Portfolio(
-        name=portfolio.name,
-        total_amount=portfolio.total_amount,
-        exchange=portfolio.exchange,
-        api_key=portfolio.api_key,
-        api_secret=portfolio.api_secret,
-        user_id=user_id
-    )
-    db.add(db_portfolio)
-    db.commit()
-    db.refresh(db_portfolio)
-    
-    for asset in portfolio.assets:
-        db_asset = PortfolioAsset(
-            portfolio_id=db_portfolio.id,
-            symbol=asset.symbol,
-            amount_in_usd=asset.amount_in_usd,
-            leverage=asset.leverage
-        )
-        db.add(db_asset)
-    db.commit()
-    return {"message": "Carteira criada", "portfolio_id": db_portfolio.id}
+# Endpoint para buscar as carteiras de um usuário
+@app.get("/portfolios/{user_id}")
+async def get_portfolios(user_id: int):
+    user_portfolios = [p for p in portfolios_db if p["user_id"] == user_id]
+    return user_portfolios
 
-@app.delete("/portfolios/{user_id}/{portfolio_id}", response_model=dict)
-def delete_portfolio(user_id: int, portfolio_id: int, db: Session = Depends(get_db)):
-    db_portfolio = db.query(Portfolio).filter(Portfolio.id == portfolio_id, Portfolio.user_id == user_id).first()
-    if not db_portfolio:
+# Endpoint para criar uma nova carteira
+@app.post("/portfolios/{user_id}")
+async def create_portfolio(user_id: int, portfolio: Portfolio):
+    portfolio_dict = portfolio.dict()
+    portfolio_dict["user_id"] = user_id
+    portfolio_dict["created_at"] = datetime.now().isoformat()
+    portfolios_db.append(portfolio_dict)
+    return {"portfolio_id": portfolio_dict["id"]}
+
+# Endpoint para excluir uma carteira
+@app.delete("/portfolios/{portfolio_id}")
+async def delete_portfolio(portfolio_id: int):
+    global portfolios_db
+    portfolio = next((p for p in portfolios_db if p["id"] == portfolio_id), None)
+    if not portfolio:
         raise HTTPException(status_code=404, detail="Carteira não encontrada")
-    db.delete(db_portfolio)
-    db.commit()
+    portfolios_db = [p for p in portfolios_db if p["id"] != portfolio_id]
     return {"message": "Carteira excluída com sucesso"}
 
-@app.get("/cryptos", response_model=List[dict])  # Novo endpoint
-def get_available_cryptos():
-    with open("/home/ubuntu/backend/cryptos.json", "r") as f:
-        cryptos = json.load(f)
-    return cryptos
-
-@app.post("/signal/{user_id}/{portfolio_id}", response_model=dict)
-def receive_signal(user_id: int, portfolio_id: int, signal: TrendSignal, db: Session = Depends(get_db)):
-    db_portfolio = db.query(Portfolio).filter(Portfolio.id == portfolio_id, Portfolio.user_id == user_id).first()
-    if not db_portfolio:
+# Endpoint para atualizar uma carteira existente
+@app.put("/portfolios/{portfolio_id}")
+async def update_portfolio(portfolio_id: int, portfolio: Portfolio):
+    global portfolios_db
+    # Verifica se a carteira existe
+    existing_portfolio = next((p for p in portfolios_db if p["id"] == portfolio_id), None)
+    if not existing_portfolio:
         raise HTTPException(status_code=404, detail="Carteira não encontrada")
-    if signal.leverage not in [1, 2]:
-        raise HTTPException(status_code=400, detail="Alavancagem deve ser 1 ou 2")
     
-    bybit = BybitService(db_portfolio.api_key, db_portfolio.api_secret, use_testnet=True)
-    bybit.set_leverage(signal.symbol, signal.leverage)
-    quantity = bybit.calculate_quantity(signal.symbol, signal.amount_in_usd, signal.leverage)
-    if quantity is None:
-        raise HTTPException(status_code=500, detail="Erro ao calcular quantidade")
-    
-    side = "Buy" if signal.trend == "up" else "Sell"
-    order = bybit.create_futures_order(client_id=str(user_id), symbol=signal.symbol, side=side, quantity=quantity)
-    if order is None:
-        raise HTTPException(status_code=500, detail="Erro ao criar ordem")
-    
-    price = bybit.get_current_price(signal.symbol)
-    db_order = Order(
-        portfolio_id=portfolio_id,
-        symbol=signal.symbol,
-        side=side,
-        quantity=quantity,
-        entry_price=price,
-        order_date=datetime.now().strftime("%Y-%m-%d")
-    )
-    db.add(db_order)
-    db.commit()
-    return {"message": f"Ordem criada para {signal.symbol}", "order": order}
-
-@app.get("/portfolio/{portfolio_id}/performance", response_model=List[dict])
-def get_performance(portfolio_id: int, db: Session = Depends(get_db)):
-    return db.query(PortfolioPerformance).filter(PortfolioPerformance.portfolio_id == portfolio_id).all()
-
-def update_performance():
-    with SessionLocal() as db:
-        portfolios = db.query(Portfolio).all()
-        for portfolio in portfolios:
-            bybit = BybitService(portfolio.api_key, portfolio.api_secret, use_testnet=True)
-            total_value = 0
-            for asset in portfolio.assets:
-                price = bybit.get_current_price(asset.symbol)
-                if price:
-                    total_value += (asset.amount_in_usd * asset.leverage) * (price / asset.entry_price if asset.entry_price else 1)
-            db_performance = PortfolioPerformance(
-                portfolio_id=portfolio.id,
-                date=datetime.now().strftime("%Y-%m-%d"),
-                total_value=total_value
-            )
-            db.add(db_performance)
-        db.commit()
-
-scheduler = BackgroundScheduler()
-scheduler.add_job(update_performance, 'cron', hour=21, minute=0)
-scheduler.start()
-
-@app.on_event("startup")
-def startup():
-    db = SessionLocal()
-    if not db.query(User).filter(User.username == "user").first():
-        db.add(User(username="user", password="pass"))
-        db.commit()
-    db.close()
-
+    # Atualiza os dados da carteira
+    portfolio_dict = portfolio.dict()
+    portfolio_dict["user_id"] = existing_portfolio["user_id"]
+    portfolio_dict["created_at"] = existing_portfolio["created_at"]
+    # Remove a carteira antiga e adiciona a nova
+    portfolios_db = [p for p in portfolios_db if p["id"] != portfolio_id]
+    portfolios_db.append(portfolio_dict)
+    return {"message": "Carteira atualizada com sucesso"}
