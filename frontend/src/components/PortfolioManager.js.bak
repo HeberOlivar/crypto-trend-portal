@@ -33,6 +33,18 @@ function PortfolioManager({ userId }) {
     setSelectedPortfolio(portfolio);
   };
 
+  const handleDeletePortfolio = async (portfolioId) => {
+    if (window.confirm('Tem certeza que deseja excluir esta carteira?')) {
+      try {
+        await axios.delete(`http://15.229.222.90:8000/portfolios/${portfolioId}`);
+        fetchPortfolios(); // Atualiza a lista de carteiras após a exclusão
+      } catch (err) {
+        console.error('Erro ao excluir carteira:', err);
+        alert('Erro ao excluir carteira. Tente novamente.');
+      }
+    }
+  };
+
   return (
     <div className="portfolio-manager">
       <h2>Gerenciar Carteiras</h2>
@@ -48,6 +60,12 @@ function PortfolioManager({ userId }) {
                 <div>
                   <button className="view-btn" onClick={() => handleViewPortfolio(portfolio)}>
                     Visualizar
+                  </button>
+                  <button
+                    className="delete-btn"
+                    onClick={() => handleDeletePortfolio(portfolio.id)}
+                  >
+                    Excluir
                   </button>
                 </div>
               </div>
@@ -69,13 +87,13 @@ function PortfolioManager({ userId }) {
           </button>
           <h4>{selectedPortfolio.name}</h4>
           <ul>
-            <li>Valor Total: {selectedPortfolio.total_amount} USDT</li>
+            <li>Valor Total: {selectedPortfolio.total_amount.toFixed(2)} USDT</li>
             <li>Exchange: {selectedPortfolio.exchange}</li>
             <li>Criptomoedas:</li>
             <ul>
               {selectedPortfolio.assets.map(asset => (
                 <li key={asset.symbol}>
-                  {asset.symbol}: {asset.amount_in_usd} USDT (Alavancagem: {asset.leverage}x)
+                  {asset.symbol}: {asset.amount_in_usd.toFixed(2)} USDT (Alavancagem: {asset.leverage}x)
                 </li>
               ))}
             </ul>
