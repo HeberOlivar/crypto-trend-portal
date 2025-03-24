@@ -54,6 +54,17 @@ class SignalRequest(BaseModel):
     amount_in_usd: float
     leverage: int
 
+# Dicionário de mapeamento de erros da Bybit
+BYBIT_ERROR_MESSAGES = {
+    10001: "Parâmetro inválido. Verifique os dados enviados (ex.: símbolo ou quantidade inválida).",
+    10002: "Timestamp dessincronizado. Tente novamente.",
+    10004: "Erro de assinatura. Verifique as credenciais da API.",
+    110001: "Saldo insuficiente para executar a ordem.",
+    110043: "Alavancagem não modificada (leverage not modified).",
+    130021: "Alavancagem inválida. Verifique o valor de alavancagem permitido para o símbolo.",
+    130028: "Falha ao definir a alavancagem. Tente novamente."
+}
+
 # Função para carregar portfolios de um arquivo JSON
 def load_portfolios():
     try:
@@ -97,13 +108,20 @@ def get_bybit_server_time() -> int:
         return local_time
 
 # Função para gerar a assinatura HMAC-SHA256 para a Bybit
-def generate_bybit_signature(api_key: str, api_secret: str, timestamp: str, recv_window: str, body: str = None) -> str:
-    # Para requisições GET, o corpo não é incluído na assinatura
-    if body is None:
-        param_str = f"{timestamp}{api_key}{recv_window}"
-    else:
-        # Para requisições POST, o corpo é incluído
-        param_str = f"{timestamp}{api_key}{recv_window}{body}"
+def generate_bybit_signature(api_key: str, api_secret: str, timestamp: str, recv_window: str, body: str = None, query_params: Dict = None) -> str:
+    # Base da string de assinatura
+    param_str = f"{timestamp}{api_key}{recv_window}"
+    
+    # Para requisições GET, incluir os parâmetros da query string
+    if query_params:
+        # Ordena os parâmetros alfabeticamente e concatena no formato key=value
+        sorted_params = sorted(query_params.items())
+        query_str = "".join(f"{key}={value}" for key, value in sorted_params)
+        param_str += query_str
+    # Para requisições POST, incluir o corpo
+    elif body:
+        param_str += body
+    
     logger.info(f"String de assinatura gerada: {param_str}")
     
     # Gera a assinatura HMAC-SHA256
@@ -123,8 +141,8 @@ def validate_bybit_credentials(api_key: str, api_secret: str) -> bool:
         timestamp = str(get_bybit_server_time())
         recv_window = "10000"  # Janela de recebimento (10 segundos)
         
-        # Para requisições GET, não incluímos o corpo na assinatura
-        signature = generate_bybit_signature(api_key, api_secret, timestamp, recv_window, body=None)
+        # Para requisições GET sem parâmetros adicionais
+        signature = generate_bybit_signature(api_key, api_secret, timestamp, recv_window, body=None, query_params=None)
         
         headers = {
             "X-BAPI-API-KEY": api_key,
@@ -195,6 +213,113 @@ def get_current_price(symbol: str) -> float:
         return price
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erro ao obter preço do ativo {symbol}: {str(e)}")
+
+# Função para verificar o saldo da conta na Bybit
+def check_balance(api_key: str, api_secret: str, amount_in_usd: float) -> bool:
+    timestamp = str(get_bybit_server_time())
+    recv_window = "10000"
+    query_params = {"accountType": "UNIFIED"}  # Conta UTA
+    
+    # Gera a assinatura incluindo os parâmetros da query string
+    signature = generate_bybit_signature(api_key, api_secret, timestamp, recv_window, body=None, query_params=query_params)
+    
+    headers = {
+        "X-BAPI-API-KEY": api_key,
+        "X-BAPI-TIMESTAMP": timestamp,
+        "X-BAPI-RECV-WINDOW": recv_window,
+        "X-BAPI-SIGN": signature,
+        "Content-Type": "application/json"
+    }
+    logger.info(f"Cabeçalhos da requisição (verificação de saldo): {headers}")
+    
+    try:
+        response = requests.get(
+            "https://api-testnet.bybit.com/v5/account/wallet-balance",
+            headers=headers,
+            params=query_params
+        )
+        response.raise_for_status()
+        data = response.json()
+        logger.info(f"Resposta da verificação de saldo: {data}")
+        
+        if data["retCode"] != 0:
+            error_msg = BYBIT_ERROR_MESSAGES.get(data["retCode"], data["retMsg"])
+            raise HTTPException(status_code=500, detail=f"Erro ao verificar saldo: {error_msg} (retCode: {data['retCode']})")
+        
+        # Obtém o saldo disponível em USDT
+        for coin in data["result"]["list"][0]["coin"]:
+            if coin["coin"] == "USDT":
+                wallet_balance = coin.get("walletBalance", "0")
+                if not wallet_balance:
+                    raise HTTPException(status_code=400, detail="Saldo da carteira (walletBalance) não disponível para USDT")
+                available_balance = float(wallet_balance)
+                logger.info(f"Saldo disponível em USDT (walletBalance): {available_balance}")
+                if available_balance < amount_in_usd:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Saldo insuficiente. Saldo disponível: {available_balance} USDT, necessário: {amount_in_usd} USDT"
+                    )
+                return True
+        raise HTTPException(status_code=400, detail="USDT não encontrado na carteira")
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Erro ao verificar saldo: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Erro ao verificar saldo: {str(e)}")
+
+# Função para definir a alavancagem na Bybit
+def set_leverage(api_key: str, api_secret: str, symbol: str, leverage: int) -> bool:
+    timestamp = str(get_bybit_server_time())
+    recv_window = "10000"
+    
+    # Parâmetros para definir a alavancagem
+    params = {
+        "category": "linear",
+        "symbol": symbol,
+        "buyLeverage": str(leverage),
+        "sellLeverage": str(leverage)
+    }
+    body = json.dumps(params, separators=(',', ':'))
+    signature = generate_bybit_signature(api_key, api_secret, timestamp, recv_window, body=body, query_params=None)
+    
+    headers = {
+        "X-BAPI-API-KEY": api_key,
+        "X-BAPI-TIMESTAMP": timestamp,
+        "X-BAPI-RECV-WINDOW": recv_window,
+        "X-BAPI-SIGN": signature,
+        "Content-Type": "application/json"
+    }
+    logger.info(f"Cabeçalhos da requisição (definição de alavancagem): {headers}")
+    logger.info(f"Corpo da requisição (definição de alavancagem): {body}")
+    
+    try:
+        response = requests.post(
+            "https://api-testnet.bybit.com/v5/position/set-leverage",
+            headers=headers,
+            data=body
+        )
+        response_data = response.json()
+        logger.info(f"Resposta da definição de alavancagem: {response_data}")
+        
+        # Ignora o erro 110043 (leverage not modified)
+        if response_data["retCode"] == 0 or response_data["retCode"] == 110043:
+            return True
+        
+        # Trata erro de alavancagem inválida (10001 com mensagem "leverage invalid" ou 130021)
+        if (response_data["retCode"] == 10001 and "leverage invalid" in response_data["retMsg"].lower()) or response_data["retCode"] == 130021:
+            error_msg = f"Alavancagem inválida ({leverage}x). O valor máximo permitido para {symbol} é geralmente 100x."
+            raise HTTPException(
+                status_code=400,
+                detail=error_msg
+            )
+        
+        # Outros erros
+        error_msg = BYBIT_ERROR_MESSAGES.get(response_data["retCode"], response_data["retMsg"])
+        raise HTTPException(
+            status_code=500,
+            detail=f"Erro ao definir alavancagem: {error_msg} (retCode: {response_data['retCode']})"
+        )
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Erro ao definir alavancagem: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Erro ao definir alavancagem: {str(e)}")
 
 # Endpoint para login
 @app.post("/login")
@@ -285,6 +410,9 @@ async def send_signal(portfolio_id: int, signal: SignalRequest):
     if not validate_bybit_credentials(api_key, api_secret):
         raise HTTPException(status_code=400, detail="Credenciais da Bybit inválidas")
 
+    # Verifica o saldo da conta
+    check_balance(api_key, api_secret, signal.amount_in_usd)
+
     # Obtém o preço atual do ativo
     price = get_current_price(signal.symbol)
     if price <= 0:
@@ -317,6 +445,9 @@ async def send_signal(portfolio_id: int, signal: SignalRequest):
             detail=f"Quantidade ajustada ({qty}) é maior que a quantidade máxima permitida ({max_order_qty}) para {signal.symbol}"
         )
 
+    # Define a alavancagem para o símbolo
+    set_leverage(api_key, api_secret, signal.symbol, signal.leverage)
+
     # Obtém o timestamp do servidor da Bybit
     timestamp = str(get_bybit_server_time())
 
@@ -338,7 +469,7 @@ async def send_signal(portfolio_id: int, signal: SignalRequest):
     logger.info(f"Corpo da requisição (enviado): {body}")
 
     # Gera a assinatura usando o corpo JSON
-    signature = generate_bybit_signature(api_key, api_secret, timestamp, recv_window, body)
+    signature = generate_bybit_signature(api_key, api_secret, timestamp, recv_window, body=body, query_params=None)
 
     # Cabeçalhos para a chamada à Bybit
     headers = {
@@ -362,9 +493,10 @@ async def send_signal(portfolio_id: int, signal: SignalRequest):
         
         # Verifica se há erro lógico na resposta da Bybit
         if response_data["retCode"] != 0:
+            error_msg = BYBIT_ERROR_MESSAGES.get(response_data["retCode"], response_data["retMsg"])
             raise HTTPException(
                 status_code=500,
-                detail=f"Erro na API da Bybit: {response_data['retMsg']} (retCode: {response_data['retCode']})"
+                detail=f"Erro na API da Bybit: {error_msg} (retCode: {response_data['retCode']})"
             )
         
         return {"message": "Ordem enviada com sucesso", "bybit_response": response_data}
