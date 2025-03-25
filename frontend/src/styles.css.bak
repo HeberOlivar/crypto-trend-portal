@@ -1,0 +1,276 @@
+/* Reset básico */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: 'Poppins', sans-serif;
+  background-color: #f5f7fa;
+  color: #333;
+}
+
+/* Cabeçalho */
+.header {
+  background-color: #fff;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+  padding: 15px 30px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  position: fixed;
+  top: 0;
+  width: 100%;
+  z-index: 1000;
+}
+
+.header .logo {
+  font-size: 24px;
+  font-weight: 700;
+  color: #1a73e8;
+}
+
+.header .nav {
+  display: flex;
+  gap: 20px;
+}
+
+.header .nav a,
+.header .nav button {
+  text-decoration: none;
+  color: #333;
+  font-weight: 500;
+  font-size: 16px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  transition: color 0.3s;
+}
+
+.header .nav a:hover,
+.header .nav button:hover {
+  color: #1a73e8;
+}
+
+/* Conteúdo principal */
+.main-content {
+  margin-top: 80px; /* Espaço para o header fixo */
+  padding: 40px 20px;
+  max-width: 1200px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/* Estilo dos formulários (Login, Signup, PortfolioForm) */
+.login,
+.signup,
+.portfolio-form {
+  background-color: #fff;
+  padding: 30px;
+  border-radius: 10px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+  max-width: 500px;
+  margin: 0 auto;
+  margin-bottom: 30px; /* Espaço entre o formulário e a lista de portfólios */
+}
+
+.login h2,
+.signup h2,
+.portfolio-form h2 {
+  font-size: 24px;
+  margin-bottom: 20px;
+  color: #1a73e8;
+  text-align: center;
+}
+
+.login div,
+.signup div,
+.portfolio-form div {
+  margin-bottom: 15px;
+}
+
+.login label,
+.signup label,
+.portfolio-form label {
+  display: block;
+  font-size: 14px;
+  font-weight: 500;
+  margin-bottom: 5px;
+  color: #555;
+}
+
+.login input[type="text"],
+.login input[type="password"],
+.login input[type="email"],
+.login input[type="tel"],
+.signup input[type="text"],
+.signup input[type="email"],
+.signup input[type="tel"],
+.portfolio-form input[type="text"],
+.portfolio-form input[type="email"],
+.portfolio-form input[type="tel"],
+.portfolio-form select {
+  width: 100%;
+  padding: 10px;
+  border: 1px solid #ddd;
+  border-radius: 5px;
+  font-size: 14px;
+  transition: border-color 0.3s;
+}
+
+.login input:focus,
+.signup input:focus,
+.portfolio-form input:focus,
+.portfolio-form select:focus {
+  border-color: #1a73e8;
+  outline: none;
+}
+
+.portfolio-form input[type="radio"],
+.portfolio-form input[type="checkbox"] {
+  margin-right: 10px;
+}
+
+.login button,
+.signup button,
+.portfolio-form button {
+  background-color: #1a73e8;
+  color: #fff;
+  border: none;
+  padding: 10px 20px;
+  border-radius: 5px;
+  font-size: 16px;
+  cursor: pointer;
+  transition: background-color 0.3s;
+  margin: 5px;
+}
+
+.login button:hover,
+.signup button:hover,
+.portfolio-form button:hover {
+  background-color: #1557b0;
+}
+
+.portfolio-form button:disabled {
+  background-color: #cccccc;
+  cursor: not-allowed;
+}
+
+/* Estilo da lista de portfólios */
+.portfolio-list {
+  background-color: #fff;
+  padding: 30px;
+  border-radius: 10px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+}
+
+.portfolio-list h2 {
+  font-size: 24px;
+  margin-bottom: 20px;
+  color: #1a73e8;
+  text-align: center;
+}
+
+.portfolio-list table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.portfolio-list th,
+.portfolio-list td {
+  padding: 12px;
+  text-align: left;
+  border-bottom: 1px solid #ddd;
+}
+
+.portfolio-list th {
+  background-color: #f5f7fa;
+  font-weight: 600;
+  color: #333;
+}
+
+.portfolio-list td {
+  color: #555;
+}
+
+.portfolio-list button {
+  background-color: #e63946;
+  color: #fff;
+  border: none;
+  padding: 8px 15px;
+  border-radius: 5px;
+  cursor: pointer;
+  transition: background-color 0.3s;
+  margin-right: 5px;
+}
+
+.portfolio-list button:hover {
+  background-color: #d00000;
+}
+
+.portfolio-list .edit-btn {
+  background-color: #1a73e8;
+}
+
+.portfolio-list .edit-btn:hover {
+  background-color: #1557b0;
+}
+
+/* Botão para criar nova carteira */
+.create-portfolio-btn {
+  display: block;
+  margin: 20px auto;
+  background-color: #1a73e8;
+  color: #fff;
+  border: none;
+  padding: 10px 20px;
+  border-radius: 5px;
+  font-size: 16px;
+  cursor: pointer;
+  transition: background-color 0.3s;
+}
+
+.create-portfolio-btn:hover {
+  background-color: #1557b0;
+}
+
+/* Mensagens de erro e sucesso */
+.error {
+  color: #e63946;
+  background-color: #ffe6e6;
+  padding: 10px;
+  border-radius: 5px;
+  margin-bottom: 15px;
+  text-align: center;
+}
+
+.success {
+  color: #2ecc71;
+  background-color: #e6ffed;
+  padding: 10px;
+  border-radius: 5px;
+  margin-bottom: 15px;
+  text-align: center;
+}
+
+/* Responsividade */
+@media (max-width: 768px) {
+  .header {
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .header .nav {
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .login,
+  .signup,
+  .portfolio-form,
+  .portfolio-list {
+    padding: 20px;
+    max-width: 100%;
+  }
+}

@@ -1,51 +1,71 @@
 import React, { useState } from 'react';
 import axios from 'axios';
+import { useNavigate } from 'react-router-dom';
 
-function Login({ onLogin }) {
-  const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
+const Login = ({ setUserId, setUserInfo }) => {
+  const [formData, setFormData] = useState({
+    username: '',
+    password: '',
+  });
+  const [error, setError] = useState(null);
+  const navigate = useNavigate();
 
-  const handleLogin = async (e) => {
+  const handleChange = (e) => {
+    const { name, value } = e.target;
+    setFormData({ ...formData, [name]: value });
+  };
+
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    setError('');
-    console.log('Tentando login com:', { username, password }); // Depuração
     try {
-      const response = await axios.post('http://15.229.222.90:8000/login', {
-        username,
-        password,
+      const response = await axios.post('http://15.229.222.90:8000/login', formData);
+      const userId = response.data.user_id;
+      setUserId(userId);
+
+      // Busca as informações do usuário (mockado por enquanto, já que o backend não tem um endpoint para isso)
+      // No futuro, você pode adicionar um endpoint /users/{userId} para buscar essas informações
+      setUserInfo({
+        name: 'Usuário Logado', // Mockado
+        email: 'email@exemplo.com', // Mockado
+        phone: '123456789', // Mockado
       });
-      console.log('Resposta do login:', response.data); // Depuração
-      onLogin(response.data.user_id);
+
+      navigate('/portfolios');
     } catch (err) {
-      console.error('Erro no login:', err.response?.data || err.message); // Depuração
-      setError(err.response?.data?.detail || 'Erro ao fazer login. Verifique suas credenciais.');
+      setError(err.response?.data?.detail || 'Erro ao fazer login.');
     }
   };
 
   return (
     <div className="login">
       <h2>Login</h2>
-      {error && <p className="error">{error}</p>}
-      <form onSubmit={handleLogin}>
-        <input
-          type="text"
-          placeholder="Usuário"
-          value={username}
-          onChange={(e) => setUsername(e.target.value)}
-          className="login-input"
-        />
-        <input
-          type="password"
-          placeholder="Senha"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          className="login-input"
-        />
+      {error && <div className="error">{error}</div>}
+      <form onSubmit={handleSubmit}>
+        <div>
+          <label>Username:</label>
+          <input
+            type="text"
+            name="username"
+            value={formData.username}
+            onChange={handleChange}
+            required
+          />
+        </div>
+        <div>
+          <label>Senha:</label>
+          <input
+            type="password"
+            name="password"
+            value={formData.password}
+            onChange={handleChange}
+            required
+          />
+        </div>
         <button type="submit">Entrar</button>
       </form>
+      <p>Não tem uma conta? <button onClick={() => navigate('/signup')}>Criar Conta</button></p>
     </div>
   );
-}
+};
 
 export default Login;

@@ -1,39 +1,61 @@
-// src/components/Login.js
 import React, { useState } from 'react';
+import axios from 'axios';
+import { useNavigate } from 'react-router-dom';
 
-function Login({ onLogin }) {
-  const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
+const Login = ({ setUserId }) => {
+  const [formData, setFormData] = useState({
+    username: '',
+    password: '',
+  });
+  const [error, setError] = useState(null);
+  const navigate = useNavigate();
 
-  const handleSubmit = (e) => {
+  const handleChange = (e) => {
+    const { name, value } = e.target;
+    setFormData({ ...formData, [name]: value });
+  };
+
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    if (username === 'user' && password === 'pass') {
-      onLogin();
-    } else {
-      alert('Credenciais inválidas');
+    try {
+      const response = await axios.post('http://15.229.222.90:8000/login', formData);
+      setUserId(response.data.user_id);
+      navigate('/portfolios');
+    } catch (err) {
+      setError(err.response?.data?.detail || 'Erro ao fazer login.');
     }
   };
 
   return (
-    <div>
+    <div className="login">
       <h2>Login</h2>
+      {error && <div className="error">{error}</div>}
       <form onSubmit={handleSubmit}>
-        <input
-          type="text"
-          placeholder="Usuário"
-          value={username}
-          onChange={(e) => setUsername(e.target.value)}
-        />
-        <input
-          type="password"
-          placeholder="Senha"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-        />
+        <div>
+          <label>Username:</label>
+          <input
+            type="text"
+            name="username"
+            value={formData.username}
+            onChange={handleChange}
+            required
+          />
+        </div>
+        <div>
+          <label>Senha:</label>
+          <input
+            type="password"
+            name="password"
+            value={formData.password}
+            onChange={handleChange}
+            required
+          />
+        </div>
         <button type="submit">Entrar</button>
       </form>
+      <p>Não tem uma conta? <button onClick={() => navigate('/signup')}>Criar Conta</button></p>
     </div>
   );
-}
+};
 
 export default Login;

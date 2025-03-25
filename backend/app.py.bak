@@ -10,6 +10,7 @@ import hashlib
 import time
 import logging
 import math
+import uuid
 
 app = FastAPI()
 
@@ -20,10 +21,10 @@ logger = logging.getLogger(__name__)
 # Adicionar middleware CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Permite todas as origens (ajuste conforme necessário)
+    allow_origins=["*"],
     allow_credentials=True,
-    allow_methods=["*"],  # Permite todos os métodos (GET, POST, DELETE, PUT, etc.)
-    allow_headers=["*"],  # Permite todos os cabeçalhos
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 # Modelo para os ativos da carteira
@@ -40,12 +41,19 @@ class Portfolio(BaseModel):
     exchange: str
     api_key: str
     api_secret: str
+    portfolioType: str  # Novo campo: 'daily' ou 'intraday'
     assets: List[Asset]
 
 # Modelo para o login
 class LoginRequest(BaseModel):
     username: str
     password: str
+
+# Modelo para o cadastro de usuário
+class SignupRequest(BaseModel):
+    name: str
+    email: str
+    phone: str
 
 # Modelo para o signal
 class SignalRequest(BaseModel):
@@ -65,13 +73,34 @@ BYBIT_ERROR_MESSAGES = {
     130028: "Falha ao definir a alavancagem. Tente novamente."
 }
 
+# Função para carregar usuários de um arquivo JSON
+def load_users():
+    try:
+        with open("users.json", "r") as file:
+            return json.load(file)
+    except FileNotFoundError:
+        return []
+    except Exception as e:
+        logger.error(f"Erro ao carregar users.json: {str(e)}")
+        return []
+
+# Função para salvar usuários em um arquivo JSON
+def save_users(users):
+    try:
+        with open("users.json", "w") as file:
+            json.dump(users, file, indent=4)
+    except Exception as e:
+        logger.error(f"Erro ao salvar users.json: {str(e)}")
+
+# Carrega os usuários ao iniciar o servidor
+users_db = load_users()
+
 # Função para carregar portfolios de um arquivo JSON
 def load_portfolios():
     try:
         with open("portfolios.json", "r") as file:
             return json.load(file)
     except FileNotFoundError:
-        # Se o arquivo não existir, retorna uma lista vazia
         return []
     except Exception as e:
         logger.error(f"Erro ao carregar portfolios.json: {str(e)}")
@@ -96,42 +125,31 @@ def get_bybit_server_time() -> int:
         data = response.json()
         if data["retCode"] != 0:
             raise Exception(data["retMsg"])
-        # O horário do servidor está em "timeSecond"
-        server_time = int(data["result"]["timeSecond"]) * 1000  # Converte de segundos para milissegundos
+        server_time = int(data["result"]["timeSecond"]) * 1000
         logger.info(f"Horário do servidor da Bybit: {server_time}")
         return server_time
     except Exception as e:
         logger.error(f"Erro ao obter horário do servidor da Bybit: {str(e)}")
-        # Fallback para o horário local
         local_time = int(time.time() * 1000)
         logger.warning(f"Usando horário local como fallback: {local_time}")
         return local_time
 
 # Função para gerar a assinatura HMAC-SHA256 para a Bybit
 def generate_bybit_signature(api_key: str, api_secret: str, timestamp: str, recv_window: str, body: str = None, query_params: Dict = None) -> str:
-    # Base da string de assinatura
     param_str = f"{timestamp}{api_key}{recv_window}"
-    
-    # Para requisições GET, incluir os parâmetros da query string
     if query_params:
-        # Ordena os parâmetros alfabeticamente e concatena no formato key=value
         sorted_params = sorted(query_params.items())
         query_str = "".join(f"{key}={value}" for key, value in sorted_params)
         param_str += query_str
-    # Para requisições POST, incluir o corpo
     elif body:
         param_str += body
-    
     logger.info(f"String de assinatura gerada: {param_str}")
-    
-    # Gera a assinatura HMAC-SHA256
     signature = hmac.new(
         api_secret.encode('utf-8'),
         param_str.encode('utf-8'),
         hashlib.sha256
     ).hexdigest()
     logger.info(f"Assinatura gerada (X-BAPI-SIGN): {signature}")
-    
     return signature
 
 # Função para validar as credenciais na Bybit
@@ -139,11 +157,8 @@ def validate_bybit_credentials(api_key: str, api_secret: str) -> bool:
     max_attempts = 3
     for attempt in range(max_attempts):
         timestamp = str(get_bybit_server_time())
-        recv_window = "10000"  # Janela de recebimento (10 segundos)
-        
-        # Para requisições GET sem parâmetros adicionais
+        recv_window = "10000"
         signature = generate_bybit_signature(api_key, api_secret, timestamp, recv_window, body=None, query_params=None)
-        
         headers = {
             "X-BAPI-API-KEY": api_key,
             "X-BAPI-TIMESTAMP": timestamp,
@@ -152,7 +167,6 @@ def validate_bybit_credentials(api_key: str, api_secret: str) -> bool:
             "Content-Type": "application/json"
         }
         logger.info(f"Cabeçalhos da requisição (validação): {headers}")
-        
         try:
             response = requests.get(
                 "https://api-testnet.bybit.com/v5/user/query-api",
@@ -163,12 +177,11 @@ def validate_bybit_credentials(api_key: str, api_secret: str) -> bool:
             if data["retCode"] == 0:
                 return True
             elif data["retCode"] == 10002:
-                # Timestamp dessincronizado, tenta novamente
                 logger.warning(f"Timestamp dessincronizado (tentativa {attempt + 1}): req_timestamp[{timestamp}], server_timestamp[{data['time']}]")
                 if attempt == max_attempts - 1:
                     logger.error("Falha ao sincronizar timestamp após várias tentativas")
                     return False
-                time.sleep(1)  # Pequena pausa antes de tentar novamente
+                time.sleep(1)
                 continue
             else:
                 logger.error(f"Credenciais inválidas: {data['retMsg']}")
@@ -177,7 +190,7 @@ def validate_bybit_credentials(api_key: str, api_secret: str) -> bool:
             logger.error(f"Erro ao validar credenciais: {str(e)}")
             return False
 
-# Função para obter informações do símbolo na Bybit (quantidade mínima, máxima e passo)
+# Função para obter informações do símbolo na Bybit
 def get_symbol_info(symbol: str) -> Dict:
     try:
         response = requests.get(
@@ -208,7 +221,6 @@ def get_current_price(symbol: str) -> float:
         data = response.json()
         if data["retCode"] != 0:
             raise Exception(data["retMsg"])
-        # O preço está em "lastPrice"
         price = float(data["result"]["list"][0]["lastPrice"])
         return price
     except Exception as e:
@@ -218,11 +230,8 @@ def get_current_price(symbol: str) -> float:
 def check_balance(api_key: str, api_secret: str, amount_in_usd: float) -> bool:
     timestamp = str(get_bybit_server_time())
     recv_window = "10000"
-    query_params = {"accountType": "UNIFIED"}  # Conta UTA
-    
-    # Gera a assinatura incluindo os parâmetros da query string
+    query_params = {"accountType": "UNIFIED"}
     signature = generate_bybit_signature(api_key, api_secret, timestamp, recv_window, body=None, query_params=query_params)
-    
     headers = {
         "X-BAPI-API-KEY": api_key,
         "X-BAPI-TIMESTAMP": timestamp,
@@ -231,7 +240,6 @@ def check_balance(api_key: str, api_secret: str, amount_in_usd: float) -> bool:
         "Content-Type": "application/json"
     }
     logger.info(f"Cabeçalhos da requisição (verificação de saldo): {headers}")
-    
     try:
         response = requests.get(
             "https://api-testnet.bybit.com/v5/account/wallet-balance",
@@ -241,12 +249,9 @@ def check_balance(api_key: str, api_secret: str, amount_in_usd: float) -> bool:
         response.raise_for_status()
         data = response.json()
         logger.info(f"Resposta da verificação de saldo: {data}")
-        
         if data["retCode"] != 0:
             error_msg = BYBIT_ERROR_MESSAGES.get(data["retCode"], data["retMsg"])
             raise HTTPException(status_code=500, detail=f"Erro ao verificar saldo: {error_msg} (retCode: {data['retCode']})")
-        
-        # Obtém o saldo disponível em USDT
         for coin in data["result"]["list"][0]["coin"]:
             if coin["coin"] == "USDT":
                 wallet_balance = coin.get("walletBalance", "0")
@@ -269,8 +274,6 @@ def check_balance(api_key: str, api_secret: str, amount_in_usd: float) -> bool:
 def set_leverage(api_key: str, api_secret: str, symbol: str, leverage: int) -> bool:
     timestamp = str(get_bybit_server_time())
     recv_window = "10000"
-    
-    # Parâmetros para definir a alavancagem
     params = {
         "category": "linear",
         "symbol": symbol,
@@ -279,7 +282,6 @@ def set_leverage(api_key: str, api_secret: str, symbol: str, leverage: int) -> b
     }
     body = json.dumps(params, separators=(',', ':'))
     signature = generate_bybit_signature(api_key, api_secret, timestamp, recv_window, body=body, query_params=None)
-    
     headers = {
         "X-BAPI-API-KEY": api_key,
         "X-BAPI-TIMESTAMP": timestamp,
@@ -289,7 +291,6 @@ def set_leverage(api_key: str, api_secret: str, symbol: str, leverage: int) -> b
     }
     logger.info(f"Cabeçalhos da requisição (definição de alavancagem): {headers}")
     logger.info(f"Corpo da requisição (definição de alavancagem): {body}")
-    
     try:
         response = requests.post(
             "https://api-testnet.bybit.com/v5/position/set-leverage",
@@ -298,33 +299,73 @@ def set_leverage(api_key: str, api_secret: str, symbol: str, leverage: int) -> b
         )
         response_data = response.json()
         logger.info(f"Resposta da definição de alavancagem: {response_data}")
-        
-        # Ignora o erro 110043 (leverage not modified)
-        if response_data["retCode"] != 0 and response_data["retCode"] != 110043:
-            error_msg = BYBIT_ERROR_MESSAGES.get(response_data["retCode"], response_data["retMsg"])
+        if response_data["retCode"] == 0 or response_data["retCode"] == 110043:
+            return True
+        if (response_data["retCode"] == 10001 and "leverage invalid" in response_data["retMsg"].lower()) or response_data["retCode"] == 130021:
+            error_msg = f"Alavancagem inválida ({leverage}x). O valor máximo permitido para {symbol} é geralmente 100x."
             raise HTTPException(
-                status_code=500,
-                detail=f"Erro ao definir alavancagem: {error_msg} (retCode: {response_data['retCode']})"
+                status_code=400,
+                detail=error_msg
             )
-        return True
+        error_msg = BYBIT_ERROR_MESSAGES.get(response_data["retCode"], response_data["retMsg"])
+        raise HTTPException(
+            status_code=500,
+            detail=f"Erro ao definir alavancagem: {error_msg} (retCode: {response_data['retCode']})"
+        )
     except requests.exceptions.RequestException as e:
         logger.error(f"Erro ao definir alavancagem: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Erro ao definir alavancagem: {str(e)}")
 
+# Endpoint para signup (criar conta)
+@app.post("/signup")
+async def signup(request: SignupRequest):
+    global users_db
+    # Valida se o email já existe
+    if any(user["email"] == request.email for user in users_db):
+        raise HTTPException(status_code=400, detail="Email já cadastrado.")
+    
+    # Gera um username e senha para o usuário
+    username = request.email.split('@')[0]
+    password = str(uuid.uuid4())[:8]
+    
+    user = {
+        "id": len(users_db) + 1,
+        "name": request.name,
+        "email": request.email,
+        "phone": request.phone,
+        "username": username,
+        "password": password,
+        "created_at": datetime.now().isoformat()
+    }
+    users_db.append(user)
+    save_users(users_db)
+    return {"username": username, "password": password, "user_id": user["id"]}
+
 # Endpoint para login
 @app.post("/login")
 async def login(request: LoginRequest):
-    if request.username == "user" and request.password == "pass":
-        return {"user_id": 1}
-    raise HTTPException(status_code=401, detail="Credenciais inválidas")
+    user = next((u for u in users_db if u["username"] == request.username and u["password"] == request.password), None)
+    if not user:
+        raise HTTPException(status_code=401, detail="Credenciais inválidas")
+    return {"user_id": user["id"]}
 
 # Endpoint para buscar as criptomoedas disponíveis
 @app.get("/cryptos")
-async def get_cryptos():
+async def get_cryptos(timeframe: str = None):
     try:
         with open("cryptos.json", "r") as file:
-            cryptos = json.load(file)
-        return cryptos
+            cryptos_data = json.load(file)
+        
+        if timeframe not in ["daily", "intraday", None]:
+            raise HTTPException(status_code=400, detail="Parâmetro 'timeframe' inválido. Use 'daily' ou 'intraday'.")
+        
+        # Se não for especificado um timeframe, retorna todas as criptomoedas (união das listas)
+        if timeframe is None:
+            all_cryptos = list(set(cryptos_data["daily"] + cryptos_data["intraday"]))
+            return all_cryptos
+        
+        # Retorna a lista correspondente ao timeframe
+        return cryptos_data[timeframe]
     except FileNotFoundError:
         raise HTTPException(status_code=500, detail="Arquivo cryptos.json não encontrado")
     except Exception as e:
@@ -343,13 +384,10 @@ async def create_portfolio(user_id: int, portfolio: Portfolio):
     portfolio_dict = portfolio.dict()
     portfolio_dict["user_id"] = user_id
     portfolio_dict["created_at"] = datetime.now().isoformat()
-    
-    # Valida as credenciais antes de salvar
     if not validate_bybit_credentials(portfolio_dict["api_key"], portfolio_dict["api_secret"]):
         raise HTTPException(status_code=400, detail="Credenciais da Bybit inválidas")
-    
     portfolios_db.append(portfolio_dict)
-    save_portfolios(portfolios_db)  # Salva no arquivo JSON
+    save_portfolios(portfolios_db)
     return {"portfolio_id": portfolio_dict["id"]}
 
 # Endpoint para excluir uma carteira
@@ -360,7 +398,7 @@ async def delete_portfolio(portfolio_id: int):
     if not portfolio:
         raise HTTPException(status_code=404, detail="Carteira não encontrada")
     portfolios_db = [p for p in portfolios_db if p["id"] != portfolio_id]
-    save_portfolios(portfolios_db)  # Salva no arquivo JSON
+    save_portfolios(portfolios_db)
     return {"message": "Carteira excluída com sucesso"}
 
 # Endpoint para atualizar uma carteira existente
@@ -370,60 +408,40 @@ async def update_portfolio(portfolio_id: int, portfolio: Portfolio):
     existing_portfolio = next((p for p in portfolios_db if p["id"] == portfolio_id), None)
     if not existing_portfolio:
         raise HTTPException(status_code=404, detail="Carteira não encontrada")
-    
     portfolio_dict = portfolio.dict()
     portfolio_dict["user_id"] = existing_portfolio["user_id"]
     portfolio_dict["created_at"] = existing_portfolio["created_at"]
-    
-    # Valida as credenciais antes de salvar
     if not validate_bybit_credentials(portfolio_dict["api_key"], portfolio_dict["api_secret"]):
         raise HTTPException(status_code=400, detail="Credenciais da Bybit inválidas")
-    
     portfolios_db = [p for p in portfolios_db if p["id"] != portfolio_id]
     portfolios_db.append(portfolio_dict)
-    save_portfolios(portfolios_db)  # Salva no arquivo JSON
+    save_portfolios(portfolios_db)
     return {"message": "Carteira atualizada com sucesso"}
 
 # Endpoint para enviar um sinal para a Bybit
 @app.post("/signal/{portfolio_id}")
 async def send_signal(portfolio_id: int, signal: SignalRequest):
-    # Busca as credenciais da carteira no portfolios_db
     portfolio = next((p for p in portfolios_db if p["id"] == portfolio_id), None)
     if not portfolio:
         raise HTTPException(status_code=404, detail="Carteira não encontrada")
-
     api_key = portfolio["api_key"]
     api_secret = portfolio["api_secret"]
     logger.info(f"Usando credenciais - api_key: {api_key}, api_secret: {api_secret}")
-
-    # Valida as credenciais antes de prosseguir
     if not validate_bybit_credentials(api_key, api_secret):
         raise HTTPException(status_code=400, detail="Credenciais da Bybit inválidas")
-
-    # Verifica o saldo da conta
     check_balance(api_key, api_secret, signal.amount_in_usd)
-
-    # Obtém o preço atual do ativo
     price = get_current_price(signal.symbol)
     if price <= 0:
         raise HTTPException(status_code=400, detail="Preço do ativo inválido")
-
-    # Obtém as informações do símbolo (quantidade mínima, máxima e passo)
     symbol_info = get_symbol_info(signal.symbol)
     min_order_qty = symbol_info["minOrderQty"]
     max_order_qty = symbol_info["maxOrderQty"]
     qty_step = symbol_info["qtyStep"]
     logger.info(f"Informações do símbolo {signal.symbol}: minOrderQty={min_order_qty}, maxOrderQty={max_order_qty}, qtyStep={qty_step}")
-
-    # Calcula a quantidade (qty) com base no amount_in_usd e no preço atual
     qty = signal.amount_in_usd / price
     logger.info(f"Quantidade calculada (antes do ajuste): {qty}")
-
-    # Ajusta a quantidade para ser um múltiplo de qty_step
     qty = math.floor(qty / qty_step) * qty_step
     logger.info(f"Quantidade ajustada (múltiplo de qtyStep): {qty}")
-
-    # Valida a quantidade ajustada
     if qty < min_order_qty:
         raise HTTPException(
             status_code=400,
@@ -434,34 +452,20 @@ async def send_signal(portfolio_id: int, signal: SignalRequest):
             status_code=400,
             detail=f"Quantidade ajustada ({qty}) é maior que a quantidade máxima permitida ({max_order_qty}) para {signal.symbol}"
         )
-
-    # Define a alavancagem para o símbolo
     set_leverage(api_key, api_secret, signal.symbol, signal.leverage)
-
-    # Obtém o timestamp do servidor da Bybit
     timestamp = str(get_bybit_server_time())
-
-    # Parâmetros para a chamada à Bybit
-    recv_window = "10000"  # Janela de recebimento (10 segundos)
-    
-    # Dados da ordem para a Bybit
+    recv_window = "10000"
     order_params = {
-        "category": "linear",  # Futuros lineares (USDT)
+        "category": "linear",
         "symbol": signal.symbol,
         "side": "Buy" if signal.trend == "up" else "Sell",
         "orderType": "Market",
-        "qty": str(qty),  # Usa a quantidade ajustada
+        "qty": str(qty),
         "timeInForce": "GTC"
     }
-
-    # Serializa os parâmetros como JSON (sem espaços extras)
     body = json.dumps(order_params, separators=(',', ':'))
     logger.info(f"Corpo da requisição (enviado): {body}")
-
-    # Gera a assinatura usando o corpo JSON
     signature = generate_bybit_signature(api_key, api_secret, timestamp, recv_window, body=body, query_params=None)
-
-    # Cabeçalhos para a chamada à Bybit
     headers = {
         "X-BAPI-API-KEY": api_key,
         "X-BAPI-TIMESTAMP": timestamp,
@@ -470,25 +474,20 @@ async def send_signal(portfolio_id: int, signal: SignalRequest):
         "Content-Type": "application/json"
     }
     logger.info(f"Cabeçalhos da requisição (criação de ordem): {headers}")
-
-    # Faz a chamada à API da Bybit (usando Testnet)
     try:
         response = requests.post(
             "https://api-testnet.bybit.com/v5/order/create",
             headers=headers,
-            data=body  # Envia o corpo como string
+            data=body
         )
         response_data = response.json()
         logger.info(f"Resposta da Bybit: {response_data}")
-        
-        # Verifica se há erro lógico na resposta da Bybit
         if response_data["retCode"] != 0:
             error_msg = BYBIT_ERROR_MESSAGES.get(response_data["retCode"], response_data["retMsg"])
             raise HTTPException(
                 status_code=500,
                 detail=f"Erro na API da Bybit: {error_msg} (retCode: {response_data['retCode']})"
             )
-        
         return {"message": "Ordem enviada com sucesso", "bybit_response": response_data}
     except requests.exceptions.RequestException as e:
         logger.error(f"Erro ao enviar ordem para a Bybit: {str(e)}")

@@ -1,0 +1,337 @@
+import React, { useState, useEffect } from 'react';
+import axios from 'axios';
+
+const PortfolioForm = ({ userId, onPortfolioCreated, isFirstPortfolio, userInfo }) => {
+  const [formData, setFormData] = useState({
+    portfolioName: '',
+    portfolioType: 'daily',
+    leverage: 1,
+    selectedCryptos: [],
+    totalAmount: 0,
+    exchange: 'Bybit',
+    apiKey: '',
+    apiSecret: '',
+  });
+  const [cryptos, setCryptos] = useState([]);
+  const [capitalRequired, setCapitalRequired] = useState(0);
+  const [step, setStep] = useState(1);
+  const [error, setError] = useState(null);
+  const [success, setSuccess] = useState(null);
+  const [isApiValid, setIsApiValid] = useState(false);
+
+  useEffect(() => {
+    const fetchCryptos = async () => {
+      try {
+        const response = await axios.get('http://15.229.222.90:8000/cryptos', {
+          params: { timeframe: formData.portfolioType },
+        });
+        setCryptos(response.data);
+      } catch (err) {
+        setError('Erro ao carregar criptomoedas disponíveis.');
+      }
+    };
+    if (formData.portfolioType) {
+      fetchCryptos();
+    }
+  }, [formData.portfolioType]);
+
+  useEffect(() => {
+    const calculateCapital = () => {
+      const baseCapitalPerCrypto = 100;
+      const multiplier = formData.leverage === 2 ? 1.5 : 1;
+      const total = formData.selectedCryptos.length * baseCapitalPerCrypto * multiplier;
+      setCapitalRequired(total);
+    };
+    calculateCapital();
+  }, [formData.selectedCryptos, formData.leverage]);
+
+  const handleChange = (e) => {
+    const { name, value } = e.target;
+    setFormData({ ...formData, [name]: value });
+    if (name === 'apiKey' || name === 'apiSecret') {
+      setIsApiValid(false); // Reseta a validação se o usuário alterar os campos
+    }
+  };
+
+  const handleCryptoSelection = (cryptoCode) => {
+    const isSelected = formData.selectedCryptos.includes(cryptoCode);
+    if (isSelected) {
+      setFormData({
+        ...formData,
+        selectedCryptos: formData.selectedCryptos.filter((c) => c !== cryptoCode),
+      });
+    } else {
+      setFormData({
+        ...formData,
+        selectedCryptos: [...formData.selectedCryptos, cryptoCode],
+      });
+    }
+  };
+
+  const handleNextStep = () => {
+    if (step === 1 && !formData.portfolioName) {
+      setError('Por favor, insira o nome da carteira.');
+      return;
+    }
+    if (step === 3 && formData.selectedCryptos.length === 0) {
+      setError('Selecione pelo menos uma criptomoeda.');
+      return;
+    }
+    setError(null);
+    setStep(step + 1);
+  };
+
+  const handlePreviousStep = () => {
+    setStep(step - 1);
+  };
+
+  const validateApiCredentials = async () => {
+    try {
+      if (formData.apiKey && formData.apiSecret) {
+        setIsApiValid(true);
+        setError(null);
+        setSuccess('Credenciais válidas!');
+      } else {
+        setIsApiValid(false);
+        setError('Por favor, insira a API Key e o API Secret.');
+      }
+    } catch (err) {
+      setIsApiValid(false);
+      setError('Credenciais inválidas. Verifique sua API Key e API Secret.');
+    }
+  };
+
+  const handleSubmit = async () => {
+    if (!isApiValid) {
+      setError('Por favor, valide as credenciais da API antes de continuar.');
+      return;
+    }
+
+    try {
+      const portfolioData = {
+        id: Date.now(),
+        user_id: userId,
+        name: formData.portfolioName,
+        total_amount: formData.totalAmount || capitalRequired,
+        exchange: formData.exchange,
+        api_key: formData.apiKey,
+        api_secret: formData.apiSecret,
+        portfolioType: formData.portfolioType,
+        assets: formData.selectedCryptos.map((cryptoCode) => ({
+          symbol: cryptoCode,
+          amount_in_usd: (formData.totalAmount || capitalRequired) / formData.selectedCryptos.length,
+          leverage: formData.leverage,
+        })),
+      };
+
+      await axios.post(`http://15.229.222.90:8000/portfolios/${userId}`, portfolioData);
+      setSuccess('Portfólio criado com sucesso!');
+      onPortfolioCreated();
+    } catch (err) {
+      setError(err.response?.data?.detail || 'Erro ao criar portfólio.');
+    }
+  };
+
+  const handleCreateAnotherPortfolio = (createAnother) => {
+    if (createAnother) {
+      setFormData({
+        ...formData,
+        portfolioName: '',
+        portfolioType: formData.portfolioType === 'daily' ? 'intraday' : 'daily',
+        selectedCryptos: [],
+        leverage: 1,
+        apiKey: '',
+        apiSecret: '',
+        totalAmount: 0,
+      });
+      setIsApiValid(false);
+      setStep(1);
+    } else {
+      setStep(6);
+    }
+  };
+
+  return (
+    <div className="portfolio-form">
+      {error && <div className="error">{error}</div>}
+      {success && <div className="success">{success}</div>}
+
+      {/* Passo 1: Nome da Carteira e Tipo de Portfólio */}
+      {step === 1 && (
+        <div>
+          <h2>{isFirstPortfolio ? 'Bem-vindo! Vamos criar sua primeira carteira' : 'Nova Carteira'}</h2>
+          <div>
+            <label>Nome da Carteira:</label>
+            <input
+              type="text"
+              name="portfolioName"
+              value={formData.portfolioName}
+              onChange={handleChange}
+            />
+          </div>
+          <div>
+            <h3>Tipo de Portfólio</h3>
+            <label>
+              <input
+                type="radio"
+                name="portfolioType"
+                value="daily"
+                checked={formData.portfolioType === 'daily'}
+                onChange={handleChange}
+              />
+              Diário
+            </label>
+            <label>
+              <input
+                type="radio"
+                name="portfolioType"
+                value="intraday"
+                checked={formData.portfolioType === 'intraday'}
+                onChange={handleChange}
+              />
+              Intraday (60 min)
+            </label>
+          </div>
+          <button onClick={handleNextStep}>Próximo</button>
+        </div>
+      )}
+
+      {/* Passo 2: Alavancagem */}
+      {step === 2 && (
+        <div>
+          <h2>Alavancagem</h2>
+          <div>
+            <label>
+              <input
+                type="radio"
+                name="leverage"
+                value={1}
+                checked={formData.leverage === 1}
+                onChange={(e) =>
+                  setFormData({ ...formData, leverage: parseInt(e.target.value) })
+                }
+              />
+              1x (Igual ao gestor)
+            </label>
+            <label>
+              <input
+                type="radio"
+                name="leverage"
+                value={2}
+                checked={formData.leverage === 2}
+                onChange={(e) =>
+                  setFormData({ ...formData, leverage: parseInt(e.target.value) })
+                }
+              />
+              2x (Mais arrojado)
+            </label>
+          </div>
+          <button onClick={handlePreviousStep}>Voltar</button>
+          <button onClick={handleNextStep}>Próximo</button>
+        </div>
+      )}
+
+      {/* Passo 3: Seleção de Criptomoedas e Montante Total */}
+      {step === 3 && (
+        <div>
+          <h2>Seleção de Criptomoedas</h2>
+          <div>
+            <label>Montante Total (USD):</label>
+            <input
+              type="number"
+              name="totalAmount"
+              value={formData.totalAmount}
+              onChange={handleChange}
+              placeholder="Digite o montante total a ser distribuído"
+            />
+          </div>
+          <div>
+            {cryptos.map((crypto) => (
+              <div key={crypto.code}>
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={formData.selectedCryptos.includes(crypto.code)}
+                    onChange={() => handleCryptoSelection(crypto.code)}
+                  />
+                  {crypto.name} ({crypto.code})
+                </label>
+              </div>
+            ))}
+          </div>
+          <p>Capital Mínimo Necessário: ${capitalRequired}</p>
+          <button onClick={handlePreviousStep}>Voltar</button>
+          <button onClick={handleNextStep}>Próximo</button>
+        </div>
+      )}
+
+      {/* Passo 4: Seleção da Exchange, API Key e API Secret */}
+      {step === 4 && (
+        <div>
+          <h2>Configuração da Exchange</h2>
+          <div>
+            <label>Exchange:</label>
+            <select name="exchange" value={formData.exchange} onChange={handleChange}>
+              <option value="Bybit">Bybit</option>
+            </select>
+          </div>
+          <div>
+            <label>API Key:</label>
+            <input
+              type="text"
+              name="apiKey"
+              value={formData.apiKey}
+              onChange={handleChange}
+            />
+          </div>
+          <div>
+            <label>API Secret:</label>
+            <input
+              type="text"
+              name="apiSecret"
+              value={formData.apiSecret}
+              onChange={handleChange}
+            />
+          </div>
+          <button onClick={validateApiCredentials}>Validar Credenciais</button>
+          <button onClick={handlePreviousStep}>Voltar</button>
+          <button onClick={handleSubmit} disabled={!isApiValid}>
+            Confirmar Portfólio
+          </button>
+        </div>
+      )}
+
+      {/* Passo 5: Criar Outro Portfólio */}
+      {step === 5 && (
+        <div>
+          <h2>Deseja criar outro portfólio?</h2>
+          <p>
+            Você criou um portfólio {formData.portfolioType === 'daily' ? 'Diário' : 'Intraday'}. Deseja criar um portfólio {formData.portfolioType === 'daily' ? 'Intraday' : 'Diário'}?
+          </p>
+          <button onClick={() => handleCreateAnotherPortfolio(true)}>Sim</button>
+          <button onClick={() => handleCreateAnotherPortfolio(false)}>Não</button>
+        </div>
+      )}
+
+      {/* Passo 6: Pagamento (Mockado) */}
+      {step === 6 && (
+        <div>
+          <h2>Escolha do Plano</h2>
+          <div>
+            <button onClick={() => alert('Plano Semestral selecionado!')}>
+              Plano Semestral
+            </button>
+            <button onClick={() => alert('Plano Anual selecionado!')}>
+              Plano Anual
+            </button>
+            <button onClick={() => alert('Plano 18 meses selecionado!')}>
+              Plano 18 meses
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default PortfolioForm;

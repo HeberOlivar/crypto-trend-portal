@@ -1,0 +1,4 @@
+{
+  "daily": ["BTCUSDT", "ETHUSDT", "XRPUSDT", "LTCUSDT"],
+  "intraday": ["BTCUSDT", "ETHUSDT", "SOLUSDT", "ADAUSDT"]
+}
