@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
+import { fetchAuthSession } from '@aws-amplify/auth'; // Nova importação
 
 const PortfolioForm = ({ userId, onPortfolioCreated, isFirstPortfolio, userInfo, editingPortfolio }) => {
   const [formData, setFormData] = useState({
@@ -14,7 +15,7 @@ const PortfolioForm = ({ userId, onPortfolioCreated, isFirstPortfolio, userInfo,
   });
   const [cryptos, setCryptos] = useState([]);
   const [capitalRequired, setCapitalRequired] = useState(0);
-  const [step, setStep] = useState(editingPortfolio ? 3 : 1); // Pula para o passo 3 se for edição
+  const [step, setStep] = useState(editingPortfolio ? 3 : 1);
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(null);
   const [isApiValid, setIsApiValid] = useState(editingPortfolio ? true : false);
@@ -108,9 +109,11 @@ const PortfolioForm = ({ userId, onPortfolioCreated, isFirstPortfolio, userInfo,
     }
 
     try {
+      const session = await fetchAuthSession();
+      const token = session.tokens?.idToken?.toString();
       const portfolioData = {
         id: editingPortfolio ? editingPortfolio.id : Date.now(),
-        user_id: userId,
+        userId: userId,
         name: formData.portfolioName,
         total_amount: formData.totalAmount || capitalRequired,
         exchange: formData.exchange,
@@ -125,14 +128,22 @@ const PortfolioForm = ({ userId, onPortfolioCreated, isFirstPortfolio, userInfo,
       };
 
       if (editingPortfolio) {
-        await axios.put(`http://15.229.222.90:8000/portfolios/${editingPortfolio.id}`, portfolioData);
+        await axios.put(`http://15.229.222.90:8000/portfolios/${editingPortfolio.id}`, portfolioData, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
       } else {
-        await axios.post(`http://15.229.222.90:8000/portfolios/${userId}`, portfolioData);
+        await axios.post(`http://15.229.222.90:8000/portfolios/${userId}`, portfolioData, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
       }
       setSuccess(editingPortfolio ? 'Portfólio atualizado com sucesso!' : 'Portfólio criado com sucesso!');
       onPortfolioCreated();
     } catch (err) {
-      setError(err.response?.data?.detail || 'Erro ao salvar portfólio.');
+      setError(err.response?.data?.error || 'Erro ao salvar portfólio.');
     }
   };
 
@@ -160,7 +171,6 @@ const PortfolioForm = ({ userId, onPortfolioCreated, isFirstPortfolio, userInfo,
       {error && <div className="error">{error}</div>}
       {success && <div className="success">{success}</div>}
 
-      {/* Passo 1: Nome da Carteira e Tipo de Portfólio */}
       {step === 1 && (
         <div>
           <h2>{isFirstPortfolio ? 'Bem-vindo! Vamos criar sua primeira carteira' : 'Nova Carteira'}</h2>
@@ -200,7 +210,6 @@ const PortfolioForm = ({ userId, onPortfolioCreated, isFirstPortfolio, userInfo,
         </div>
       )}
 
-      {/* Passo 2: Alavancagem */}
       {step === 2 && (
         <div>
           <h2>Alavancagem</h2>
@@ -235,7 +244,6 @@ const PortfolioForm = ({ userId, onPortfolioCreated, isFirstPortfolio, userInfo,
         </div>
       )}
 
-      {/* Passo 3: Seleção de Criptomoedas e Montante Total */}
       {step === 3 && (
         <div>
           <h2>{editingPortfolio ? 'Editar Portfólio' : 'Seleção de Criptomoedas'}</h2>
@@ -273,7 +281,6 @@ const PortfolioForm = ({ userId, onPortfolioCreated, isFirstPortfolio, userInfo,
         </div>
       )}
 
-      {/* Passo 4: Seleção da Exchange, API Key e API Secret */}
       {step === 4 && (
         <div>
           <h2>Configuração da Exchange</h2>
@@ -309,7 +316,6 @@ const PortfolioForm = ({ userId, onPortfolioCreated, isFirstPortfolio, userInfo,
         </div>
       )}
 
-      {/* Passo 5: Criar Outro Portfólio */}
       {step === 5 && (
         <div>
           <h2>Deseja criar outro portfólio?</h2>
@@ -321,7 +327,6 @@ const PortfolioForm = ({ userId, onPortfolioCreated, isFirstPortfolio, userInfo,
         </div>
       )}
 
-      {/* Passo 6: Pagamento (Mockado) */}
       {step === 6 && (
         <div>
           <h2>Escolha do Plano</h2>

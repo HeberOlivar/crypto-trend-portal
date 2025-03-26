@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
+import { fetchAuthSession } from '@aws-amplify/auth'; // Nova importação
 
-const PortfolioList = ({ userId, portfolios, setShowPortfolioForm, onEdit }) => {
+const PortfolioList = ({ userId, portfolios, setPortfolios, setShowPortfolioForm, onEdit }) => {
   const [cryptos, setCryptos] = useState([]);
 
   useEffect(() => {
@@ -20,8 +21,18 @@ const PortfolioList = ({ userId, portfolios, setShowPortfolioForm, onEdit }) => 
 
   const handleDelete = async (portfolioId) => {
     try {
-      await axios.delete(`http://15.229.222.90:8000/portfolios/${portfolioId}`);
-      const response = await axios.get(`http://15.229.222.90:8000/portfolios/${userId}`);
+      const session = await fetchAuthSession();
+      const token = session.tokens?.idToken?.toString();
+      await axios.delete(`http://15.229.222.90:8000/portfolios/${portfolioId}?userId=${userId}`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      const response = await axios.get(`http://15.229.222.90:8000/portfolios/${userId}`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
       setPortfolios(response.data);
     } catch (err) {
       console.error('Erro ao excluir portfólio:', err);

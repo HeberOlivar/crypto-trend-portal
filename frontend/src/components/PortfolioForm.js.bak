@@ -1,23 +1,24 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
+import { currentSession } from '@aws-amplify/auth'; // Nova importação
 
-const PortfolioForm = ({ userId, onPortfolioCreated, isFirstPortfolio, userInfo }) => {
+const PortfolioForm = ({ userId, onPortfolioCreated, isFirstPortfolio, userInfo, editingPortfolio }) => {
   const [formData, setFormData] = useState({
-    portfolioName: '',
-    portfolioType: 'daily',
-    leverage: 1,
-    selectedCryptos: [],
-    totalAmount: 0,
-    exchange: 'Bybit',
-    apiKey: '',
-    apiSecret: '',
+    portfolioName: editingPortfolio ? editingPortfolio.name : '',
+    portfolioType: editingPortfolio ? editingPortfolio.portfolioType : 'daily',
+    leverage: editingPortfolio ? editingPortfolio.assets[0]?.leverage || 1 : 1,
+    selectedCryptos: editingPortfolio ? editingPortfolio.assets.map((asset) => asset.symbol) : [],
+    totalAmount: editingPortfolio ? editingPortfolio.total_amount : 0,
+    exchange: editingPortfolio ? editingPortfolio.exchange : 'Bybit',
+    apiKey: editingPortfolio ? editingPortfolio.api_key : '',
+    apiSecret: editingPortfolio ? editingPortfolio.api_secret : '',
   });
   const [cryptos, setCryptos] = useState([]);
   const [capitalRequired, setCapitalRequired] = useState(0);
-  const [step, setStep] = useState(1);
+  const [step, setStep] = useState(editingPortfolio ? 3 : 1);
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(null);
-  const [isApiValid, setIsApiValid] = useState(false);
+  const [isApiValid, setIsApiValid] = useState(editingPortfolio ? true : false);
 
   useEffect(() => {
     const fetchCryptos = async () => {
@@ -49,7 +50,7 @@ const PortfolioForm = ({ userId, onPortfolioCreated, isFirstPortfolio, userInfo 
     const { name, value } = e.target;
     setFormData({ ...formData, [name]: value });
     if (name === 'apiKey' || name === 'apiSecret') {
-      setIsApiValid(false); // Reseta a validação se o usuário alterar os campos
+      setIsApiValid(false);
     }
   };
 
@@ -108,9 +109,10 @@ const PortfolioForm = ({ userId, onPortfolioCreated, isFirstPortfolio, userInfo 
     }
 
     try {
+      const token = (await currentSession()).getIdToken().getJwtToken();
       const portfolioData = {
-        id: Date.now(),
-        user_id: userId,
+        id: editingPortfolio ? editingPortfolio.id : Date.now(),
+        userId: userId,
         name: formData.portfolioName,
         total_amount: formData.totalAmount || capitalRequired,
         exchange: formData.exchange,
@@ -124,11 +126,23 @@ const PortfolioForm = ({ userId, onPortfolioCreated, isFirstPortfolio, userInfo 
         })),
       };
 
-      await axios.post(`http://15.229.222.90:8000/portfolios/${userId}`, portfolioData);
-      setSuccess('Portfólio criado com sucesso!');
+      if (editingPortfolio) {
+        await axios.put(`http://15.229.222.90:8000/portfolios/${editingPortfolio.id}`, portfolioData, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+      } else {
+        await axios.post(`http://15.229.222.90:8000/portfolios/${userId}`, portfolioData, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+      }
+      setSuccess(editingPortfolio ? 'Portfólio atualizado com sucesso!' : 'Portfólio criado com sucesso!');
       onPortfolioCreated();
     } catch (err) {
-      setError(err.response?.data?.detail || 'Erro ao criar portfólio.');
+      setError(err.response?.data?.error || 'Erro ao salvar portfólio.');
     }
   };
 
@@ -156,7 +170,6 @@ const PortfolioForm = ({ userId, onPortfolioCreated, isFirstPortfolio, userInfo 
       {error && <div className="error">{error}</div>}
       {success && <div className="success">{success}</div>}
 
-      {/* Passo 1: Nome da Carteira e Tipo de Portfólio */}
       {step === 1 && (
         <div>
           <h2>{isFirstPortfolio ? 'Bem-vindo! Vamos criar sua primeira carteira' : 'Nova Carteira'}</h2>
@@ -196,7 +209,6 @@ const PortfolioForm = ({ userId, onPortfolioCreated, isFirstPortfolio, userInfo 
         </div>
       )}
 
-      {/* Passo 2: Alavancagem */}
       {step === 2 && (
         <div>
           <h2>Alavancagem</h2>
@@ -231,10 +243,9 @@ const PortfolioForm = ({ userId, onPortfolioCreated, isFirstPortfolio, userInfo 
         </div>
       )}
 
-      {/* Passo 3: Seleção de Criptomoedas e Montante Total */}
       {step === 3 && (
         <div>
-          <h2>Seleção de Criptomoedas</h2>
+          <h2>{editingPortfolio ? 'Editar Portfólio' : 'Seleção de Criptomoedas'}</h2>
           <div>
             <label>Montante Total (USD):</label>
             <input
@@ -261,11 +272,14 @@ const PortfolioForm = ({ userId, onPortfolioCreated, isFirstPortfolio, userInfo 
           </div>
           <p>Capital Mínimo Necessário: ${capitalRequired}</p>
           <button onClick={handlePreviousStep}>Voltar</button>
-          <button onClick={handleNextStep}>Próximo</button>
+          {editingPortfolio ? (
+            <button onClick={handleSubmit}>Salvar Alterações</button>
+          ) : (
+            <button onClick={handleNextStep}>Próximo</button>
+          )}
         </div>
       )}
 
-      {/* Passo 4: Seleção da Exchange, API Key e API Secret */}
       {step === 4 && (
         <div>
           <h2>Configuração da Exchange</h2>
@@ -301,7 +315,6 @@ const PortfolioForm = ({ userId, onPortfolioCreated, isFirstPortfolio, userInfo 
         </div>
       )}
 
-      {/* Passo 5: Criar Outro Portfólio */}
       {step === 5 && (
         <div>
           <h2>Deseja criar outro portfólio?</h2>
@@ -313,7 +326,6 @@ const PortfolioForm = ({ userId, onPortfolioCreated, isFirstPortfolio, userInfo 
         </div>
       )}
 
-      {/* Passo 6: Pagamento (Mockado) */}
       {step === 6 && (
         <div>
           <h2>Escolha do Plano</h2>

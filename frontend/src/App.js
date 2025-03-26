@@ -1,5 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { BrowserRouter as Router, Route, Routes, Navigate, Link } from 'react-router-dom';
+import { getCurrentUser, fetchAuthSession, signOut } from '@aws-amplify/auth';
 import axios from 'axios';
 import Login from './components/Login';
 import Signup from './components/Signup';
@@ -8,48 +9,68 @@ import PortfolioList from './components/PortfolioList';
 import './styles.css';
 
 const App = () => {
-  const [userId, setUserId] = useState(null);
+  const [user, setUser] = useState(null);
   const [portfolios, setPortfolios] = useState([]);
   const [showPortfolioForm, setShowPortfolioForm] = useState(false);
   const [userInfo, setUserInfo] = useState(null);
   const [editingPortfolio, setEditingPortfolio] = useState(null);
 
-  useEffect(() => {
-    const fetchPortfolios = async () => {
-      if (userId) {
-        try {
-          const response = await axios.get(`http://15.229.222.90:8000/portfolios/${userId}`);
-          setPortfolios(response.data);
-          const shouldShowForm = response.data.length === 0;
-          console.log('Portfólios:', response.data, 'Mostrar formulário:', shouldShowForm);
-          setShowPortfolioForm(shouldShowForm);
-        } catch (err) {
-          console.error('Erro ao carregar portfólios:', err);
-        }
-      }
-    };
-    fetchPortfolios();
-  }, [userId]);
-
-  const handleLogout = () => {
-    setUserId(null);
-    setPortfolios([]);
-    setShowPortfolioForm(false);
-    setUserInfo(null);
-    setEditingPortfolio(null);
-  };
-
-  const handlePortfolioCreated = () => {
-    const fetchPortfolios = async () => {
+  // Definir fetchPortfolios antes do useEffect, usando useCallback
+  const fetchPortfolios = useCallback(async () => {
+    if (user) {
       try {
-        const response = await axios.get(`http://15.229.222.90:8000/portfolios/${userId}`);
+        const session = await fetchAuthSession();
+        const token = session.tokens?.idToken?.toString();
+        const response = await axios.get(`http://15.229.222.90:8000/portfolios/${user.userId}`, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
         setPortfolios(response.data);
-        setShowPortfolioForm(false);
-        setEditingPortfolio(null);
+        const shouldShowForm = response.data.length === 0;
+        setShowPortfolioForm(shouldShowForm);
       } catch (err) {
         console.error('Erro ao carregar portfólios:', err);
       }
-    };
+    }
+  }, [user]); // user é uma dependência de fetchPortfolios
+
+  useEffect(() => {
+    checkUser();
+  }, []);
+
+  useEffect(() => {
+    if (user) {
+      fetchPortfolios();
+    }
+  }, [user, fetchPortfolios]); // fetchPortfolios agora é estável
+
+  const checkUser = async () => {
+    try {
+      const currentUser = await getCurrentUser();
+      const session = await fetchAuthSession();
+      setUser({ ...currentUser, attributes: session.tokens?.idToken?.payload });
+      setUserInfo(session.tokens?.idToken?.payload);
+    } catch (err) {
+      setUser(null);
+      setUserInfo(null);
+    }
+  };
+
+  const handleSignOut = async () => {
+    try {
+      await signOut();
+      setUser(null);
+      setPortfolios([]);
+      setShowPortfolioForm(false);
+      setUserInfo(null);
+      setEditingPortfolio(null);
+    } catch (err) {
+      console.error('Erro ao sair:', err);
+    }
+  };
+
+  const handlePortfolioCreated = () => {
     fetchPortfolios();
   };
 
@@ -65,8 +86,8 @@ const App = () => {
         <nav className="nav">
           <Link to="/">Home</Link>
           <Link to="/portfolios">Portfólios</Link>
-          {userId ? (
-            <button onClick={handleLogout}>Sair</button>
+          {user ? (
+            <button onClick={handleSignOut}>Sair</button>
           ) : (
             <Link to="/login">Entrar</Link>
           )}
@@ -75,16 +96,16 @@ const App = () => {
 
       <div className="main-content">
         <Routes>
-          <Route path="/login" element={<Login setUserId={setUserId} setUserInfo={setUserInfo} />} />
-          <Route path="/signup" element={<Signup setUserId={setUserId} setUserInfo={setUserInfo} />} />
+          <Route path="/login" element={<Login onSignIn={checkUser} />} />
+          <Route path="/signup" element={<Signup onSignUp={checkUser} />} />
           <Route
             path="/portfolios"
             element={
-              userId ? (
+              user ? (
                 <>
                   {showPortfolioForm ? (
                     <PortfolioForm
-                      userId={userId}
+                      userId={user.userId}
                       onPortfolioCreated={handlePortfolioCreated}
                       isFirstPortfolio={portfolios.length === 0}
                       userInfo={userInfo}
@@ -93,8 +114,9 @@ const App = () => {
                   ) : (
                     portfolios.length > 0 && (
                       <PortfolioList
-                        userId={userId}
+                        userId={user.userId}
                         portfolios={portfolios}
+                        setPortfolios={setPortfolios}
                         setShowPortfolioForm={setShowPortfolioForm}
                         onEdit={handleEdit}
                       />
@@ -106,7 +128,7 @@ const App = () => {
               )
             }
           />
-          <Route path="/" element={<Navigate to={userId ? "/portfolios" : "/login"} />} />
+          <Route path="/" element={<Navigate to={user ? "/portfolios" : "/login"} />} />
         </Routes>
       </div>
     </Router>

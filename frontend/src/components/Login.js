@@ -1,38 +1,19 @@
 import React, { useState } from 'react';
-import axios from 'axios';
-import { useNavigate } from 'react-router-dom';
+import { signIn } from '@aws-amplify/auth'; // Nova importação
+import { Link } from 'react-router-dom';
 
-const Login = ({ setUserId, setUserInfo }) => {
-  const [formData, setFormData] = useState({
-    username: '',
-    password: '',
-  });
-  const [error, setError] = useState(null);
-  const navigate = useNavigate();
+const Login = ({ onSignIn }) => {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
 
-  const handleChange = (e) => {
-    const { name, value } = e.target;
-    setFormData({ ...formData, [name]: value });
-  };
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
+  const handleSignIn = async () => {
     try {
-      const response = await axios.post('http://15.229.222.90:8000/login', formData);
-      const userId = response.data.user_id;
-      setUserId(userId);
-
-      // Busca as informações do usuário (mockado por enquanto, já que o backend não tem um endpoint para isso)
-      // No futuro, você pode adicionar um endpoint /users/{userId} para buscar essas informações
-      setUserInfo({
-        name: 'Usuário Logado', // Mockado
-        email: 'email@exemplo.com', // Mockado
-        phone: '123456789', // Mockado
-      });
-
-      navigate('/portfolios');
+      await signIn({ username: email, password });
+      setError('');
+      onSignIn();
     } catch (err) {
-      setError(err.response?.data?.detail || 'Erro ao fazer login.');
+      setError('Erro ao fazer login: ' + err.message);
     }
   };
 
@@ -40,30 +21,26 @@ const Login = ({ setUserId, setUserInfo }) => {
     <div className="login">
       <h2>Login</h2>
       {error && <div className="error">{error}</div>}
-      <form onSubmit={handleSubmit}>
-        <div>
-          <label>Username:</label>
-          <input
-            type="text"
-            name="username"
-            value={formData.username}
-            onChange={handleChange}
-            required
-          />
-        </div>
-        <div>
-          <label>Senha:</label>
-          <input
-            type="password"
-            name="password"
-            value={formData.password}
-            onChange={handleChange}
-            required
-          />
-        </div>
-        <button type="submit">Entrar</button>
-      </form>
-      <p>Não tem uma conta? <button onClick={() => navigate('/signup')}>Criar Conta</button></p>
+      <div>
+        <label>Email:</label>
+        <input
+          type="email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+        />
+      </div>
+      <div>
+        <label>Senha:</label>
+        <input
+          type="password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+        />
+      </div>
+      <button onClick={handleSignIn}>Entrar</button>
+      <p>
+        Não tem conta? <Link to="/signup">Registre-se</Link>
+      </p>
     </div>
   );
 };

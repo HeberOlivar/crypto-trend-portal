@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
+import { currentSession } from '@aws-amplify/auth'; // Nova importação
 
-const PortfolioList = ({ userId, portfolios, setShowPortfolioForm, onEdit }) => {
+const PortfolioList = ({ userId, portfolios, setPortfolios, setShowPortfolioForm, onEdit }) => {
   const [cryptos, setCryptos] = useState([]);
 
   useEffect(() => {
@@ -20,8 +21,17 @@ const PortfolioList = ({ userId, portfolios, setShowPortfolioForm, onEdit }) => 
 
   const handleDelete = async (portfolioId) => {
     try {
-      await axios.delete(`http://15.229.222.90:8000/portfolios/${portfolioId}`);
-      const response = await axios.get(`http://15.229.222.90:8000/portfolios/${userId}`);
+      const token = (await currentSession()).getIdToken().getJwtToken();
+      await axios.delete(`http://15.229.222.90:8000/portfolios/${portfolioId}?userId=${userId}`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      const response = await axios.get(`http://15.229.222.90:8000/portfolios/${userId}`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
       setPortfolios(response.data);
     } catch (err) {
       console.error('Erro ao excluir portfólio:', err);
@@ -31,6 +41,17 @@ const PortfolioList = ({ userId, portfolios, setShowPortfolioForm, onEdit }) => 
   const getCryptoName = (code) => {
     const crypto = cryptos.find((c) => c.code === code);
     return crypto ? `${crypto.name} (${crypto.code})` : code;
+  };
+
+  const getPortfolioTypeLabel = (type) => {
+    switch (type) {
+      case 'daily':
+        return 'Diário';
+      case 'intraday':
+        return 'Intraday (60 min)';
+      default:
+        return 'Desconhecido';
+    }
   };
 
   return (
@@ -60,7 +81,7 @@ const PortfolioList = ({ userId, portfolios, setShowPortfolioForm, onEdit }) => 
             {portfolios.map((portfolio) => (
               <tr key={portfolio.id}>
                 <td>{portfolio.name}</td>
-                <td>{portfolio.portfolioType || 'Desconhecido'}</td>
+                <td>{getPortfolioTypeLabel(portfolio.portfolioType)}</td>
                 <td>{portfolio.assets[0]?.leverage || 1}x</td>
                 <td>
                   {portfolio.assets.map((asset) => getCryptoName(asset.symbol)).join(', ')}
