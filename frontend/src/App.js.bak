@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { BrowserRouter as Router, Route, Routes, Navigate, Link } from 'react-router-dom';
 import { getCurrentUser, fetchAuthSession, signOut } from '@aws-amplify/auth';
 import axios from 'axios';
@@ -15,29 +15,8 @@ const App = () => {
   const [userInfo, setUserInfo] = useState(null);
   const [editingPortfolio, setEditingPortfolio] = useState(null);
 
-  useEffect(() => {
-    checkUser();
-  }, []);
-
-  useEffect(() => {
-    if (user) {
-      fetchPortfolios();
-    }
-  }, [user, fetchPortfolios]); // Adiciona fetchPortfolios como dependência
-
-  const checkUser = async () => {
-    try {
-      const currentUser = await getCurrentUser();
-      const session = await fetchAuthSession();
-      setUser({ ...currentUser, attributes: session.tokens?.idToken?.payload });
-      setUserInfo(session.tokens?.idToken?.payload);
-    } catch (err) {
-      setUser(null);
-      setUserInfo(null);
-    }
-  };
-
-  const fetchPortfolios = async () => {
+  // Definir fetchPortfolios antes do useEffect, usando useCallback
+  const fetchPortfolios = useCallback(async () => {
     if (user) {
       try {
         const session = await fetchAuthSession();
@@ -53,6 +32,28 @@ const App = () => {
       } catch (err) {
         console.error('Erro ao carregar portfólios:', err);
       }
+    }
+  }, [user]); // user é uma dependência de fetchPortfolios
+
+  useEffect(() => {
+    checkUser();
+  }, []);
+
+  useEffect(() => {
+    if (user) {
+      fetchPortfolios();
+    }
+  }, [user, fetchPortfolios]); // fetchPortfolios agora é estável
+
+  const checkUser = async () => {
+    try {
+      const currentUser = await getCurrentUser();
+      const session = await fetchAuthSession();
+      setUser({ ...currentUser, attributes: session.tokens?.idToken?.payload });
+      setUserInfo(session.tokens?.idToken?.payload);
+    } catch (err) {
+      setUser(null);
+      setUserInfo(null);
     }
   };
 
