@@ -6,8 +6,8 @@ import { Amplify } from 'aws-amplify';
 Amplify.configure({
   Auth: {
     region: 'sa-east-1',
-    userPoolId: 'USER_POOL_ID', // Substitua pelo User Pool ID do Cognito
-    userPoolWebClientId: 'APP_CLIENT_ID', // Substitua pelo App Client ID do Cognito
+    userPoolId: 'sa-east-1_WDdjlqLSj', // Substitua pelo novo User Pool ID
+    userPoolWebClientId: 'f4868vlo487ccudgo70ce18v4', // Substitua pelo novo App Client ID
     mandatorySignIn: false,
   },
 });
