@@ -14,8 +14,8 @@ const App = () => {
   const [showPortfolioForm, setShowPortfolioForm] = useState(false);
   const [userInfo, setUserInfo] = useState(null);
   const [editingPortfolio, setEditingPortfolio] = useState(null);
+  const [error, setError] = useState(null);
 
-  // Definir fetchPortfolios antes do useEffect, usando useCallback
   const fetchPortfolios = useCallback(async () => {
     if (user) {
       try {
@@ -33,7 +33,7 @@ const App = () => {
         console.error('Erro ao carregar portfólios:', err);
       }
     }
-  }, [user]); // user é uma dependência de fetchPortfolios
+  }, [user]);
 
   useEffect(() => {
     checkUser();
@@ -43,17 +43,23 @@ const App = () => {
     if (user) {
       fetchPortfolios();
     }
-  }, [user, fetchPortfolios]); // fetchPortfolios agora é estável
+  }, [user, fetchPortfolios]);
 
   const checkUser = async () => {
     try {
+      console.log('Tentando verificar usuário...');
       const currentUser = await getCurrentUser();
+      console.log('Usuário atual:', currentUser);
       const session = await fetchAuthSession();
+      console.log('Sessão:', session);
       setUser({ ...currentUser, attributes: session.tokens?.idToken?.payload });
       setUserInfo(session.tokens?.idToken?.payload);
+      setError(null);
     } catch (err) {
+      console.error('Erro ao verificar usuário:', err);
       setUser(null);
       setUserInfo(null);
+      setError('Falha ao inicializar a autenticação. Verifique a configuração do Cognito. Detalhes: ' + err.message);
     }
   };
 
@@ -65,8 +71,10 @@ const App = () => {
       setShowPortfolioForm(false);
       setUserInfo(null);
       setEditingPortfolio(null);
+      setError(null);
     } catch (err) {
       console.error('Erro ao sair:', err);
+      setError('Erro ao fazer logout: ' + err.message);
     }
   };
 
@@ -78,6 +86,16 @@ const App = () => {
     setEditingPortfolio(portfolio);
     setShowPortfolioForm(true);
   };
+
+  if (error) {
+    return (
+      <div style={{ padding: '20px', textAlign: 'center' }}>
+        <h2>Erro</h2>
+        <p>{error}</p>
+        <button onClick={checkUser}>Tentar novamente</button>
+      </div>
+    );
+  }
 
   return (
     <Router>

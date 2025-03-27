@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { BrowserRouter as Router, Route, Routes, Navigate, Link } from 'react-router-dom';
-import { getCurrentUser, fetchAuthSession, signOut } from '@aws-amplify/auth';
+import { getCurrentUser, fetchAuthSession, signOut } from '@aws-amplify/auth'; // Importação correta para v6.x
 import axios from 'axios';
 import Login from './components/Login';
 import Signup from './components/Signup';
@@ -14,7 +14,7 @@ const App = () => {
   const [showPortfolioForm, setShowPortfolioForm] = useState(false);
   const [userInfo, setUserInfo] = useState(null);
   const [editingPortfolio, setEditingPortfolio] = useState(null);
-  const [error, setError] = useState(null); // Novo estado para erros
+  const [error, setError] = useState(null);
 
   const fetchPortfolios = useCallback(async () => {
     if (user) {
@@ -47,16 +47,19 @@ const App = () => {
 
   const checkUser = async () => {
     try {
+      console.log('Tentando verificar usuário...');
       const currentUser = await getCurrentUser();
+      console.log('Usuário atual:', currentUser);
       const session = await fetchAuthSession();
+      console.log('Sessão:', session);
       setUser({ ...currentUser, attributes: session.tokens?.idToken?.payload });
       setUserInfo(session.tokens?.idToken?.payload);
-      setError(null); // Limpa o erro se a autenticação for bem-sucedida
+      setError(null);
     } catch (err) {
       console.error('Erro ao verificar usuário:', err);
       setUser(null);
       setUserInfo(null);
-      setError('Falha ao inicializar a autenticação. Verifique a configuração do Cognito.');
+      setError('Falha ao inicializar a autenticação. Verifique a configuração do Cognito. Detalhes: ' + err.message);
     }
   };
 

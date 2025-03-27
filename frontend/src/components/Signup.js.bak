@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Auth } from '@aws-amplify/auth'; // Nova importação
+import { signUp } from '@aws-amplify/auth'; // Nova importação
 import { Link } from 'react-router-dom';
 
 const Signup = ({ onSignUp }) => {
@@ -10,7 +10,7 @@ const Signup = ({ onSignUp }) => {
 
   const handleSignUp = async () => {
     try {
-      await Auth.signUp({
+      await signUp({
         username: email,
         password,
         attributes: { email },

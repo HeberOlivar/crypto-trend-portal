@@ -1,15 +1,26 @@
 import React from 'react';
-import ReactDOM from 'react-dom';
+import { createRoot } from 'react-dom/client';
 import App from './App';
 import { Amplify } from 'aws-amplify';
 
-Amplify.configure({
-  Auth: {
-    region: 'sa-east-1',
-    userPoolId: 'sa-east-1_WDdjlqLSj', // Substitua pelo novo User Pool ID
-    userPoolWebClientId: 'f4868vlo487ccudgo70ce18v4', // Substitua pelo novo App Client ID
-    mandatorySignIn: false,
-  },
-});
+console.log('Amplify importado:', Amplify);
 
-ReactDOM.render(<App />, document.getElementById('root'));
+try {
+  const config = {
+    Auth: {
+      region: 'sa-east-1',
+      userPoolId: 'sa-east-1_I0mixR7qZ',
+      userPoolWebClientId: '2b5qd6ot970b84nd8249kbocdc',
+      mandatorySignIn: false,
+      authenticationFlowType: 'USER_SRP_AUTH', // Usar USER_SRP_AUTH
+    },
+  };
+  console.log('Configuração do Amplify:', config);
+  Amplify.configure(config);
+  console.log('Amplify configurado com sucesso');
+} catch (error) {
+  console.error('Erro ao configurar o Amplify:', error);
+}
+
+const root = createRoot(document.getElementById('root'));
+root.render(<App />);
